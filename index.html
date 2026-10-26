@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ben Sirb</title>
+<meta name="description" content="Ben Sirb, AI researcher in Atlanta. Mathematician by training, working on evaluation, retrieval and privacy-preserving AI.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%231d1d1f'/><text x='32' y='42' font-family='-apple-system,Helvetica,Arial' font-size='30' font-weight='600' fill='white' text-anchor='middle'>B</text></svg>">
+<style>
+  :root {
+    --bg: #fbfbfd;
+    --bg-elev: #ffffff;
+    --text: #1d1d1f;
+    --muted: #6e6e73;
+    --line: rgba(0,0,0,.08);
+    --accent: #0071e3;
+    --card-shadow: 0 2px 12px rgba(0,0,0,.06);
+    --nav-bg: rgba(251,251,253,.72);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #000000;
+      --bg-elev: #1c1c1e;
+      --text: #f5f5f7;
+      --muted: #a1a1a6;
+      --line: rgba(255,255,255,.12);
+      --accent: #2997ff;
+      --card-shadow: 0 2px 16px rgba(0,0,0,.5);
+      --nav-bg: rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #000000; --bg-elev: #1c1c1e; --text: #f5f5f7; --muted: #a1a1a6;
+    --line: rgba(255,255,255,.12); --accent: #2997ff;
+    --card-shadow: 0 2px 16px rgba(0,0,0,.5); --nav-bg: rgba(0,0,0,.6);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 17px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 0 20px; }
+
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--nav-bg); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 48px; }
+  nav .brand { font-weight: 600; color: var(--text); letter-spacing: -.01em; }
+  nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 22px; }
+  nav li a { color: var(--muted); font-size: 14px; }
+  nav li a.active, nav li a:hover { color: var(--text); text-decoration: none; }
+  @media (max-width: 560px) { nav ul { gap: 14px; } nav li a { font-size: 13px; } }
+
+  header.hero { padding: 96px 0 64px; text-align: center; }
+  header.hero h1 { font-size: clamp(40px, 7vw, 64px); font-weight: 700; letter-spacing: -.03em; margin: 0 0 8px; line-height: 1.05; }
+  header.hero .tagline { font-size: clamp(20px, 3vw, 26px); color: var(--muted); margin: 0 0 20px; font-weight: 400; letter-spacing: -.01em; }
+  header.hero .links { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  header.hero .links a {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border-radius: 980px; font-size: 15px; font-weight: 500;
+    background: var(--bg-elev); border: 1px solid var(--line); color: var(--text); box-shadow: var(--card-shadow);
+    transition: transform .15s ease, box-shadow .15s ease;
+  }
+  header.hero .links a:hover { text-decoration: none; transform: translateY(-1px); }
+  header.hero .links svg { width: 16px; height: 16px; fill: currentColor; }
+
+  section { padding: 56px 0; border-top: 1px solid var(--line); }
+  section h2 { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 28px; }
+
+  .about p { font-size: 19px; line-height: 1.6; margin: 0 0 18px; letter-spacing: -.01em; }
+  .about p:last-child { margin-bottom: 0; }
+
+  .timeline { display: flex; flex-direction: column; gap: 14px; }
+  .job {
+    background: var(--bg-elev); border: 1px solid var(--line); border-radius: 18px;
+    padding: 22px 24px; box-shadow: var(--card-shadow);
+  }
+  .job .head { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  .job .company { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin: 0; }
+  .job .when { color: var(--muted); font-size: 14px; white-space: nowrap; }
+  .job .role { color: var(--muted); font-size: 16px; margin: 2px 0 0; }
+  .job .roles { margin-top: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .job .roles > div { padding-left: 14px; border-left: 2px solid var(--line); }
+  .job .roles .title { font-weight: 600; margin: 0; }
+  .job .roles .when { display: block; margin-bottom: 6px; }
+  .job ul { margin: 10px 0 0; padding-left: 18px; color: var(--text); }
+  .job li { margin: 4px 0; }
+  .job li::marker { color: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; }
+  .card { background: var(--bg-elev); border: 1px solid var(--line); border-radius: 18px; padding: 20px 22px; box-shadow: var(--card-shadow); }
+  .card h3 { margin: 0 0 4px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .card p { margin: 0; color: var(--muted); font-size: 15px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 8px; }
+  .pill { padding: 7px 14px; border-radius: 980px; background: var(--bg-elev); border: 1px solid var(--line); font-size: 14px; }
+
+  .pubs li { margin: 0 0 12px; }
+  .pubs .venue { color: var(--muted); font-size: 15px; display: block; }
+
+  footer { padding: 40px 0 56px; color: var(--muted); font-size: 14px; text-align: center; border-top: 1px solid var(--line); }
+  footer a { color: var(--muted); }
+
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .6s ease, transform .6s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top">Ben Sirb</a>
+    <ul>
+      <li><a href="#about">About</a></li>
+      <li><a href="#experience">Experience</a></li>
+      <li><a href="#education">Education</a></li>
+      <li><a href="#publications">Publications</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <h1>Ben Sirb</h1>
+    <p class="tagline">AI researcher. Mathematician by training. Atlanta, Georgia.</p>
+    <div class="links">
+      <a href="https://www.linkedin.com/in/benjamin-sirb/" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.36V9h3.41v1.56h.05c.47-.9 1.63-1.85 3.36-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z"/></svg>
+        LinkedIn
+      </a>
+      <a href="https://github.com/benjaminsirb" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3z"/></svg>
+        GitHub
+      </a>
+      <a href="mailto:benjaminsirb@gmail.com">
+        <svg viewBox="0 0 24 24"><path d="M2 4h20a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm1 2.6V18h18V6.6l-9 6.3-9-6.3zM4.3 6l7.7 5.4L19.7 6H4.3z"/></svg>
+        Email
+      </a>
+    </div>
+  </div>
+</header>
+
+<section id="about" class="about reveal">
+  <div class="wrap">
+    <h2>About</h2>
+    <p>Hi! I'm Ben, and no LLM was used in the generation of this intro. I'm a (former) mathematician and an all-around computer nerd. How did I get here? Well, it all began a long time ago... I've liked math since I was young (and I was relatively good at it), so I always found others' aversion to it unfortunate. I initially decided to study math because I wanted to help people see math as a friendly pursuit, not a daunting one. My first goal was to teach at the high school level, but I found my coursework too fascinating to stop at my B.S., so I decided to pursue my Master's, and then my PhD, which I defended in 2018.</p>
+    <p>My PhD led me to research in the area of decentralized machine learning, which was a perfect combination of two fields I found interesting: AI and decentralized networking. After my defense, I first worked at Storj Labs helping model object durability on the Storj network, and then at Chainlink Labs where I helped model BFT consensus mechanisms. While I'm still interested in decentralized networking, I have become a lot more interested in the applications of AI, which is what I am working on currently at Interval.</p>
+    <p>My problem-solving approach is based on starting from first principles. While many people with my background enjoy working in the weeds (e.g. tuning hyperparameters of a ML model and optimizing for measures of accuracy), I'm more interested in making technologies work together for its users. This puts me at the nexus of product, research, and engineering, in any role I take on. I'm thankful that I get to work on accessible, ethical, privacy-preserving AI, and I hope to continue my pursuits for the foreseeable future. Thanks for reading!</p>
+  </div>
+</section>
+
+<section id="experience" class="reveal">
+  <div class="wrap">
+    <h2>Experience</h2>
+    <div class="timeline">
+
+      <article class="job">
+        <div class="head"><h3 class="company">Interval</h3><span class="when">Sept 2025 – Present</span></div>
+        <p class="role">Atlanta, Georgia</p>
+        <div class="roles">
+          <div>
+            <p class="title">AI Researcher</p>
+            <span class="when">July 2026 – Present</span>
+            <ul>
+              <li>Built the evaluation framework that gates every change to the company's AI products: frozen benchmarks, model judges with human spot checks, and a pre-registered keep-or-reject rule.</li>
+              <li>Research on retrieval, reasoning and inference efficiency for document question answering on privately hosted open models, measured by cost per correct answer.</li>
+              <li>Lead author on the team's research write-up of that work, and the bridge between research results and what ships in the product.</li>
+            </ul>
+          </div>
+          <div>
+            <p class="title">Staff Data Scientist (MLOps / AI Engineering)</p>
+            <span class="when">Sept 2025 – July 2026</span>
+            <ul>
+              <li>Built benchmark-gated model rollouts for the data platform's agentic ETL workflows, with experiment tracking and automated reporting.</li>
+              <li>Stood up the MLOps pipeline for an applied computer vision project: model registry, aliases for production and candidate models, and hosted experiment tracking.</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <article class="job">
+        <div class="head"><h3 class="company">Chainlink Labs</h3><span class="when">Apr 2022 – Feb 2025</span></div>
+        <p class="role">Senior Data Scientist</p>
+        <ul>
+          <li>R&amp;D for BFT consensus protocols and aggregation methodology.</li>
+          <li>Designed and implemented scoring methods for participants in a decentralized network (ETL, data pipelines).</li>
+          <li>Created simulations for modeling outcomes of decentralized consensus paradigms (Python, algorithm design).</li>
+          <li>Proposed and implemented custom BI metrics to inform product direction and quality.</li>
+          <li>Mentored junior data scientists, analysts, and other ICs.</li>
+        </ul>
+      </article>
+
+      <article class="job">
+        <div class="head"><h3 class="company">Bricz</h3><span class="when">Sept 2021 – Apr 2022</span></div>
+        <p class="role">Principal Data Scientist · Atlanta, Georgia</p>
+        <ul>
+          <li>Created an ML-based warehouse locator (K-means) using shipping data.</li>
+          <li>Served on client-facing projects on extracting insights.</li>
+          <li>Designed and implemented custom tooling to help process data at scale.</li>
+        </ul>
+      </article>
+
+      <article class="job">
+        <div class="head"><h3 class="company">Storj</h3><span class="when">Apr 2018 – Sept 2021</span></div>
+        <p class="role">Greater Atlanta Area</p>
+        <div class="roles">
+          <div>
+            <p class="title">Lead Data Scientist</p>
+            <span class="when">Oct 2020 – Sept 2021</span>
+            <ul>
+              <li>Led the implementation of custom ETL architecture and BI metrics.</li>
+              <li>Partnered with engineering and product managers to design and maintain an internal privacy-focused value-attribution product.</li>
+              <li>Led an external project for Georgia Tech's MS Analytics program.</li>
+            </ul>
+          </div>
+          <div>
+            <p class="title">Senior Data Scientist</p>
+            <span class="when">Apr 2018 – Sept 2021</span>
+            <ul>
+              <li>Created the node reputation and object durability models.</li>
+              <li>Built and managed part of the end-to-end data pipeline and ETL process.</li>
+              <li>Analyzed customer usage and recommended new product direction.</li>
+              <li>Webinar speaker.</li>
+            </ul>
+          </div>
+        </div>
+      </article>
+
+      <article class="job">
+        <div class="head"><h3 class="company">Brightside Data</h3><span class="when">Aug 2016 – Mar 2018</span></div>
+        <p class="role">Data Scientist (Founder &amp; CEO) · Atlanta, Georgia</p>
+        <ul>
+          <li>Contracted for a national media corporation (monthly reporting).</li>
+          <li>Developed appropriate statistical analysis methods for clients' needs.</li>
+          <li>Prepared professional reports with a summary of findings.</li>
+        </ul>
+      </article>
+
+      <article class="job">
+        <div class="head"><h3 class="company">University of North Georgia</h3><span class="when">Aug 2012 – July 2014</span></div>
+        <p class="role">Instructor, Mathematics</p>
+        <ul>
+          <li>Full-time adjunct instructor, teaching introductory math courses through pre-calculus.</li>
+        </ul>
+      </article>
+
+      <article class="job">
+        <div class="head"><h3 class="company">Georgia Gwinnett College</h3><span class="when">Aug 2011 – May 2013</span></div>
+        <p class="role">Instructor, Mathematics</p>
+        <ul>
+          <li>Part-time adjunct instructor, teaching introductory math courses through pre-calculus.</li>
+        </ul>
+      </article>
+
+    </div>
+  </div>
+</section>
+
+<section id="education" class="reveal">
+  <div class="wrap">
+    <h2>Education</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>PhD, Mathematics</h3>
+        <p>Georgia State University, 2014 – 2018<br>Decentralized machine learning</p>
+      </div>
+      <div class="card">
+        <h3>M.S., Mathematics</h3>
+        <p>Georgia Institute of Technology, 2010 – 2011</p>
+      </div>
+      <div class="card">
+        <h3>B.S., Mathematics</h3>
+        <p>Georgia State University, 2008 – 2009</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="publications" class="reveal">
+  <div class="wrap">
+    <h2>Publications</h2>
+    <ul class="pubs">
+      <li>Storj: A Decentralized Cloud Storage Network Framework <span class="venue">Storj Labs whitepaper</span></li>
+      <li>Decentralized Consensus Algorithm with Delayed and Stochastic Gradients <span class="venue">Dissertation, Georgia State University, 2018</span></li>
+      <li>Consensus optimization with delayed and stochastic gradients on decentralized networks <span class="venue">with Y. Ye</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="skills" class="reveal">
+  <div class="wrap">
+    <h2>Skills &amp; Languages</h2>
+    <div class="pills">
+      <span class="pill">Artificial intelligence</span>
+      <span class="pill">Agentic AI development</span>
+      <span class="pill">Evaluation &amp; benchmarking</span>
+      <span class="pill">Decentralized networking</span>
+      <span class="pill">Python</span>
+      <span class="pill">Data pipelines &amp; ETL</span>
+      <span class="pill">English</span>
+      <span class="pill">Romanian</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">© <span id="year"></span> Ben Sirb · <a href="https://www.linkedin.com/in/benjamin-sirb/">LinkedIn</a> · <a href="https://github.com/benjaminsirb">GitHub</a></div>
+</footer>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.08 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  const links = [...document.querySelectorAll('nav li a')];
+  const secs = links.map(a => document.querySelector(a.getAttribute('href')));
+  const spy = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
+      }
+    });
+  }, { rootMargin: '-40% 0px -55% 0px' });
+  secs.forEach(s => s && spy.observe(s));
+</script>
+</body>
+</html>
