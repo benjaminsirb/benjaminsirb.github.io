@@ -363,12 +363,13 @@
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const N = 32;
   const rnd = (a, b) => a + Math.random() * (b - a);
+  const randDir = () => { const t = rnd(0, 6.28), u = rnd(-1, 1), k = Math.sqrt(1 - u * u); return { x: k * Math.cos(t), y: k * Math.sin(t), z: u }; };
   const nodes = [];
   for (let i = 0; i < N; i++) {
     // roughly uniform inside a sphere
     const u = Math.random(), v = Math.random(), r = Math.cbrt(Math.random());
     const th = 2 * Math.PI * u, ph = Math.acos(2 * v - 1);
-    nodes.push({ x: r * Math.sin(ph) * Math.cos(th), y: r * Math.sin(ph) * Math.sin(th), z: r * Math.cos(ph) });
+    nodes.push({ x: r * Math.sin(ph) * Math.cos(th), y: r * Math.sin(ph) * Math.sin(th), z: r * Math.cos(ph), d: randDir() });
   }
   const edges = new Set();
   nodes.forEach((a, i) => {
@@ -418,6 +419,21 @@
     if (!d) return;
     const step = d * 0.0022;
     ax += rx * step; ay += ry * step; az += rz * step;
+    // Nodes travel in straight lines inside the unit sphere. Hitting the edge, or a small random
+    // chance each step, sends them off in a fresh direction, so the graph keeps breathing without
+    // drifting away or collapsing.
+    const move = step * 0.45;
+    for (const p of nodes) {
+      p.x += p.d.x * move; p.y += p.d.y * move; p.z += p.d.z * move;
+      const r = Math.hypot(p.x, p.y, p.z);
+      if (r > 1) {
+        p.x /= r; p.y /= r; p.z /= r;
+        let nd; do { nd = randDir(); } while (nd.x * p.x + nd.y * p.y + nd.z * p.z > -0.2);
+        p.d = nd;
+      } else if (Math.random() < move * 0.6) {
+        p.d = randDir();
+      }
+    }
     // let the axis wander
     rx += rnd(-0.08, 0.08) * step * 6; ry += rnd(-0.08, 0.08) * step * 6; rz += rnd(-0.08, 0.08) * step * 6;
     const m = Math.hypot(rx, ry, rz) || 1; rx /= m; ry /= m; rz /= m;
