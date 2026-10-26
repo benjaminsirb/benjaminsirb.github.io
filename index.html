@@ -422,8 +422,8 @@
   }
   // Scrolling adds to a small motion budget; an animation loop spends it at a capped, eased rate.
   // Fast flicks and slow drags therefore produce the same calm movement, and nothing jitters.
-  let last = scrollY, budget = 0, running = false, prev = 0;
-  const MAX_BUDGET = 0.9, MIN_RATE = 0.06, MAX_RATE = 0.28;
+  let last = scrollY, budget = 0, running = false, prev = 0, lastScrollAt = 0;
+  const MAX_BUDGET = 0.5, MIN_RATE = 0.03, MAX_RATE = 0.28;
   const advance = (step) => {
     ax += rx * step; ay += ry * step; az += rz * step;
     rx += rnd(-0.08, 0.08) * step * 6; ry += rnd(-0.08, 0.08) * step * 6; rz += rnd(-0.08, 0.08) * step * 6;
@@ -446,9 +446,11 @@
   };
   const loop = (t) => {
     const dt = Math.min(0.05, (t - prev) / 1000 || 0); prev = t;
-    const rate = Math.min(MAX_RATE, MIN_RATE + budget * 0.35);
+    const rate = Math.min(MAX_RATE, MIN_RATE + budget * 0.8);
     const step = Math.min(budget, rate * dt);
     budget -= step;
+    // Once the finger lifts, let the remaining budget bleed off so motion settles within a couple of seconds.
+    if (performance.now() - lastScrollAt > 120) budget *= Math.max(0, 1 - dt * 1.6);
     if (step > 0) { advance(step); draw(); }
     if (budget > 0.0005) requestAnimationFrame(loop); else { running = false; budget = 0; }
   };
@@ -457,6 +459,7 @@
     const d = Math.abs(scrollY - last); last = scrollY;
     if (!d) return;
     budget = Math.min(MAX_BUDGET, budget + d * 0.0022);
+    lastScrollAt = performance.now();
     if (!running) { running = true; prev = performance.now(); requestAnimationFrame(loop); }
   };
   addEventListener('scroll', onScroll, { passive: true });
