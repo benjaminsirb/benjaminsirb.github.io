@@ -72,8 +72,9 @@
 
   main { min-width: 0; }
   .wrap { max-width: 760px; margin: 0; padding: 0 48px; }
-  section { padding: 56px 0; border-top: 1px solid var(--line); }
-  section:first-child { border-top: 0; padding-top: 64px; }
+  section { padding: 48px 0; }
+  section:first-child { padding-top: 64px; }
+  section:last-child { padding-bottom: 72px; }
   section h2 { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 28px; }
 
   .about p { font-size: 18px; line-height: 1.6; margin: 0 0 18px; letter-spacing: -.01em; }
@@ -107,6 +108,8 @@
 
   .topbar { display: none; }
   #scrim { display: none; }
+  #net { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+  .layout, .topbar, footer { position: relative; z-index: 1; }
   @media (max-width: 860px) {
     .layout { grid-template-columns: 1fr; }
     aside {
@@ -133,6 +136,7 @@
   <a class="brand" href="#about">Ben Sirb</a>
   <button id="menu" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
 </div>
+<canvas id="net" aria-hidden="true"></canvas>
 <div id="scrim" aria-hidden="true"></div>
 <div class="layout">
   <aside id="side">
@@ -328,7 +332,7 @@
   const io = new IntersectionObserver((entries) => {
     entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
   }, { threshold: 0.08 });
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  document.querySelectorAll('.reveal').forEach(el => { io.observe(el); if (el.getBoundingClientRect().top < innerHeight) el.classList.add('in'); });
   const links = [...document.querySelectorAll('.side-nav a')];
   const secs = links.map(a => document.querySelector(a.getAttribute('href')));
   const spy = new IntersectionObserver((entries) => {
@@ -348,6 +352,82 @@
   scrim.addEventListener('click', () => setOpen(false));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
   side.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', () => setOpen(false)));
+</script>
+<script>
+(() => {
+  // Faint 3D network behind the page. It rotates as you scroll; the axis drifts at random so
+  // scrolling back never retraces, and the amount of scroll (not direction) drives the turn.
+  const cv = document.getElementById('net');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const N = 32;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const nodes = [];
+  for (let i = 0; i < N; i++) {
+    // roughly uniform inside a sphere
+    const u = Math.random(), v = Math.random(), r = Math.cbrt(Math.random());
+    const th = 2 * Math.PI * u, ph = Math.acos(2 * v - 1);
+    nodes.push({ x: r * Math.sin(ph) * Math.cos(th), y: r * Math.sin(ph) * Math.sin(th), z: r * Math.cos(ph) });
+  }
+  const edges = new Set();
+  nodes.forEach((a, i) => {
+    const near = nodes.map((b, j) => ({ j, d: Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) })).filter((o) => o.j !== i).sort((p, q) => p.d - q.d);
+    for (const o of near.slice(0, 2 + (Math.random() < 0.35 ? 1 : 0))) edges.add(i < o.j ? i + '-' + o.j : o.j + '-' + i);
+  });
+  const E = [...edges].map((k) => k.split('-').map(Number));
+  let ax = rnd(0, 6.28), ay = rnd(0, 6.28), az = rnd(0, 6.28);
+  let rx = rnd(-1, 1), ry = rnd(-1, 1), rz = rnd(-1, 1);
+  let W = 0, H = 0, dpr = 1;
+  const resize = () => {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    W = innerWidth; H = innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  };
+  const rot = (p) => {
+    let { x, y, z } = p;
+    let c = Math.cos(ax), s = Math.sin(ax); [y, z] = [y * c - z * s, y * s + z * c];
+    c = Math.cos(ay); s = Math.sin(ay); [x, z] = [x * c + z * s, -x * s + z * c];
+    c = Math.cos(az); s = Math.sin(az); [x, y] = [x * c - y * s, x * s + y * c];
+    return { x, y, z };
+  };
+  const dark = () => matchMedia('(prefers-color-scheme: dark)').matches && document.documentElement.dataset.theme !== 'light' || document.documentElement.dataset.theme === 'dark';
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    const R = Math.max(W, H) * 0.42, f = 2.6;
+    const cx = W / 2, cy = H / 2;
+    const ink = dark() ? '255,255,255' : '0,0,0';
+    const pts = nodes.map((p) => { const q = rot(p); const k = f / (f + q.z); return { X: cx + q.x * R * k, Y: cy + q.y * R * k, k, z: q.z }; });
+    ctx.lineWidth = 1;
+    for (const [i, j] of E) {
+      const a = pts[i], b = pts[j];
+      ctx.strokeStyle = `rgba(${ink},${(0.05 + 0.04 * ((a.k + b.k) / 2 - 0.7)).toFixed(3)})`;
+      ctx.beginPath(); ctx.moveTo(a.X, a.Y); ctx.lineTo(b.X, b.Y); ctx.stroke();
+    }
+    for (const p of pts) {
+      ctx.fillStyle = `rgba(${ink},${(0.07 + 0.08 * (p.k - 0.7)).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(p.X, p.Y, 1.6 + 1.6 * p.k, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  let last = scrollY, pending = false;
+  const onScroll = () => {
+    if (reduced) return;
+    const d = Math.abs(scrollY - last); last = scrollY;
+    if (!d) return;
+    const step = d * 0.0022;
+    ax += rx * step; ay += ry * step; az += rz * step;
+    // let the axis wander
+    rx += rnd(-0.08, 0.08) * step * 6; ry += rnd(-0.08, 0.08) * step * 6; rz += rnd(-0.08, 0.08) * step * 6;
+    const m = Math.hypot(rx, ry, rz) || 1; rx /= m; ry /= m; rz /= m;
+    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; draw(); }); }
+  };
+  addEventListener('scroll', onScroll, { passive: true });
+  addEventListener('resize', resize);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw);
+  resize();
+})();
 </script>
 </body>
 </html>
