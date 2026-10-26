@@ -111,6 +111,8 @@
       position: fixed; inset: 0 auto 0 0; width: 300px; transform: translateX(-100%); transition: transform .25s ease; z-index: 20;
     }
     aside.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
+    #scrim { position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+    #scrim.show { opacity: 1; pointer-events: auto; }
     .topbar {
       display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; height: 48px; padding: 0 16px;
       background: var(--nav-bg); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); border-bottom: 1px solid var(--line);
@@ -148,6 +150,7 @@
       <a href="mailto:benjaminsirb@gmail.com"><svg viewBox="0 0 24 24"><path d="M2 4h20a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1zm1 2.6V18h18V6.6l-9 6.3-9-6.3zM4.3 6l7.7 5.4L19.7 6H4.3z"/></svg>Email</a>
     </div>
   </aside>
+  <div id="scrim" aria-hidden="true"></div>
   <main>
 <section id="about" class="about reveal">
   <div class="wrap">
@@ -313,7 +316,7 @@
 </section>
 
 <footer>
-  <div class="wrap">© <span id="year"></span> Ben Sirb · <a href="https://www.linkedin.com/in/benjamin-sirb/">LinkedIn</a> · <a href="https://github.com/benjaminsirb">GitHub</a></div>
+  <div class="wrap">© <span id="year"></span> Ben Sirb · <a href="https://www.linkedin.com/in/benjamin-sirb/">LinkedIn</a> · <a href="https://github.com/benjaminsirb">GitHub</a> · <a href="https://benjaminsirb.com/puzzles/">Puzzles</a></div>
 </footer>
   </main>
 </div>
@@ -336,8 +339,12 @@
 </script>
 <script>
   const side = document.getElementById('side');
-  document.getElementById('menu').addEventListener('click', () => side.classList.toggle('open'));
-  side.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', () => side.classList.remove('open')));
+  const scrim = document.getElementById('scrim');
+  const setOpen = (open) => { side.classList.toggle('open', open); scrim.classList.toggle('show', open); };
+  document.getElementById('menu').addEventListener('click', (e) => { e.stopPropagation(); setOpen(!side.classList.contains('open')); });
+  scrim.addEventListener('click', () => setOpen(false));
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
+  side.querySelectorAll('a[href^="#"]').forEach(a => a.addEventListener('click', () => setOpen(false)));
 </script>
 </body>
 </html>
