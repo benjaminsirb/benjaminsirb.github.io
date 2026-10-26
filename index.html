@@ -420,13 +420,14 @@
       ctx.beginPath(); ctx.arc(p.X, p.Y, 1.6 + 1.6 * p.k, 0, Math.PI * 2); ctx.fill();
     }
   }
-  let last = scrollY, pending = false;
-  const onScroll = () => {
-    if (reduced) return;
-    const d = Math.abs(scrollY - last); last = scrollY;
-    if (!d) return;
-    const step = d * 0.0022;
+  // Scrolling adds to a small motion budget; an animation loop spends it at a capped, eased rate.
+  // Fast flicks and slow drags therefore produce the same calm movement, and nothing jitters.
+  let last = scrollY, budget = 0, running = false, prev = 0;
+  const MAX_BUDGET = 0.9, MIN_RATE = 0.06, MAX_RATE = 0.28;
+  const advance = (step) => {
     ax += rx * step; ay += ry * step; az += rz * step;
+    rx += rnd(-0.08, 0.08) * step * 6; ry += rnd(-0.08, 0.08) * step * 6; rz += rnd(-0.08, 0.08) * step * 6;
+    const m = Math.hypot(rx, ry, rz) || 1; rx /= m; ry /= m; rz /= m;
     // Nodes travel in straight lines inside the unit sphere. Hitting the edge, or a small random
     // chance each step, sends them off in a fresh direction, so the graph keeps breathing without
     // drifting away or collapsing.
@@ -442,10 +443,21 @@
         p.d = randDir();
       }
     }
-    // let the axis wander
-    rx += rnd(-0.08, 0.08) * step * 6; ry += rnd(-0.08, 0.08) * step * 6; rz += rnd(-0.08, 0.08) * step * 6;
-    const m = Math.hypot(rx, ry, rz) || 1; rx /= m; ry /= m; rz /= m;
-    if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; draw(); }); }
+  };
+  const loop = (t) => {
+    const dt = Math.min(0.05, (t - prev) / 1000 || 0); prev = t;
+    const rate = Math.min(MAX_RATE, MIN_RATE + budget * 0.35);
+    const step = Math.min(budget, rate * dt);
+    budget -= step;
+    if (step > 0) { advance(step); draw(); }
+    if (budget > 0.0005) requestAnimationFrame(loop); else { running = false; budget = 0; }
+  };
+  const onScroll = () => {
+    if (reduced) return;
+    const d = Math.abs(scrollY - last); last = scrollY;
+    if (!d) return;
+    budget = Math.min(MAX_BUDGET, budget + d * 0.0022);
+    if (!running) { running = true; prev = performance.now(); requestAnimationFrame(loop); }
   };
   addEventListener('scroll', onScroll, { passive: true });
   addEventListener('resize', resize);
