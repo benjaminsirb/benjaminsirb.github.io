@@ -335,14 +335,21 @@
   document.querySelectorAll('.reveal').forEach(el => { io.observe(el); if (el.getBoundingClientRect().top < innerHeight) el.classList.add('in'); });
   const links = [...document.querySelectorAll('.side-nav a')];
   const secs = links.map(a => document.querySelector(a.getAttribute('href')));
+  const setActive = (href) => links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === href));
+  // A clicked link wins immediately; the scroll spy stays quiet while the page glides there,
+  // which matters near the bottom where a section may never reach the spy's band.
+  let spyMuteUntil = 0;
+  links.forEach(a => a.addEventListener('click', () => { setActive(a.getAttribute('href')); spyMuteUntil = Date.now() + 1200; }));
   const spy = new IntersectionObserver((entries) => {
-    entries.forEach(e => {
-      if (e.isIntersecting) {
-        links.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + e.target.id));
-      }
-    });
+    if (Date.now() < spyMuteUntil) return;
+    entries.forEach(e => { if (e.isIntersecting) setActive('#' + e.target.id); });
   }, { rootMargin: '-40% 0px -55% 0px' });
   secs.forEach(s => s && spy.observe(s));
+  // At the very bottom of the page, the last nav section is the one being read.
+  addEventListener('scroll', () => {
+    if (Date.now() < spyMuteUntil) return;
+    if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) setActive(links[links.length - 1].getAttribute('href'));
+  }, { passive: true });
 </script>
 <script>
   const side = document.getElementById('side');
