@@ -110,12 +110,16 @@
 
   .topbar { display: none; }
   #scrim { display: none; }
-  #net { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
-  .layout, .topbar, footer { position: relative; z-index: 1; }
+  /* Negative z-index keeps the canvas behind the page without giving .layout a stacking context,
+     which would trap the sidebar's z-index under the mobile scrim. */
+  #net { position: fixed; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
   @media (max-width: 860px) {
     .layout { grid-template-columns: 1fr; }
     aside {
       position: fixed; inset: 0 auto 0 0; width: 300px; transform: translateX(-100%); transition: transform .25s ease; z-index: 20;
+      /* The desktop rule sets height: 100vh, which on iPhone runs under Safari's toolbar and hides the last links. */
+      height: auto; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding-bottom: calc(36px + env(safe-area-inset-bottom));
     }
     aside.open { transform: none; box-shadow: 0 0 40px rgba(0,0,0,.25); }
     #scrim { display: block; position: fixed; inset: 0; z-index: 15; background: rgba(0,0,0,.35); opacity: 0; pointer-events: none; transition: opacity .25s ease; }
