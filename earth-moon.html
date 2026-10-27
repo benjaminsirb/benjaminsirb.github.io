@@ -378,10 +378,12 @@ function drawPhase(a) {
 }
 
 function updateReadout(atl) {
-  const q = Math.floor((((t % 1) + 1) % 1) * 96), hh = String(Math.floor(q / 4)).padStart(2, '0'), mm = String((q % 4) * 15).padStart(2, '0');
+  // While the clock runs, show the hour only; when paused or dragging, show quarter hours.
+  const q = Math.floor((((t % 1) + 1) % 1) * 96), h24 = Math.floor(q / 4), h12 = h24 % 12 || 12, ap = h24 < 12 ? 'am' : 'pm';
+  const clock = playing && !drag ? `${h12} ${ap}` : `${h12}:${String((q % 4) * 15).padStart(2, '0')} ${ap}`;
   const isDay = atl[0] > 0;
   const f = phaseFrac(), lit = Math.round((1 - Math.cos(TAU * f)) / 2 * 100);
-  els.read1.innerHTML = `Day <b>${Math.floor(t)}</b> · Atlanta <b>${hh}:${mm}</b> · ${isDay ? 'daylight' : 'night'}`;
+  els.read1.innerHTML = `Day <b>${Math.floor(t)}</b> · Atlanta <b>${clock}</b> · ${isDay ? 'daylight' : 'night'}`;
   els.read2.innerHTML = `<b>${phaseName(f)}</b> · ${lit}% lit · ${(f * SYNODIC).toFixed(1)} days after new moon`;
 }
 
@@ -418,7 +420,8 @@ sky.addEventListener('pointerup', endDrag); sky.addEventListener('pointercancel'
 sky.addEventListener('wheel', (e) => { e.preventDefault(); elev = Math.max(0.12, Math.min(1.5, elev + e.deltaY * 0.003)); layout(); }, { passive: false });
 
 function setPlaying(v) {
-  playing = v; els.icoPlay.hidden = v; els.icoPause.hidden = !v; els.play.setAttribute('aria-label', v ? 'Pause' : 'Play');
+  playing = v; els.icoPlay.toggleAttribute('hidden', v); els.icoPause.toggleAttribute('hidden', !v); els.play.setAttribute('aria-label', v ? 'Pause' : 'Play');
+  dirty = true;
 }
 els.play.addEventListener('click', () => setPlaying(!playing));
 function setSpeed(mult) {
