@@ -46,7 +46,7 @@
   .bottom { position: fixed; }
   .panel { position: relative; }
   .tools button { width: auto; height: 28px; padding: 0 12px; font-size: 12px; border-radius: 980px; }
-  @media (max-width: 480px) { .top p { font-size: 12px; } .read { font-size: 12px; } .speed span { display: none; } .speed { gap: 4px; } .panel .speed button { padding: 0 7px; font-size: 12px; } }
+  @media (max-width: 480px) { .top p { font-size: 12px; } .read { font-size: 12px; } .panel { gap: 6px 8px; padding: 10px 10px 12px; } .speed span { display: none; } .speed { gap: 3px; } .panel .speed button { padding: 0 6px; font-size: 11.5px; } }
 </style>
 </head>
 <body>
@@ -54,19 +54,20 @@
 
 <div class="hud top">
   <div class="row"><a class="back" href="/">&larr; Ben Sirb</a><h1>Earth &amp; Moon</h1></div>
-  <p>Drag the Moon along its orbit. Drag the Earth to spin it. Drag the background to tilt the view. The Sun sits far off to the right; let a year run at 32× to watch the Earth's tilt swing through the seasons.</p>
+  <p>The Sun, Earth and Moon as they stand right now, seen from above your part of the world. Drag the Moon along its orbit. Drag the Earth to spin it. Drag the background to tilt the view. Let a year run at 32× to watch the Earth's tilt swing through the seasons.</p>
 </div>
 
 <div class="hud bottom">
   <div class="panel">
-    <div class="tools"><button id="reset" type="button">Reset</button></div>
+    <div class="tools"><button id="reset" type="button" title="Back to the current time and date">Reset</button></div>
     <button id="play" type="button" aria-label="Pause">
       <svg id="ico-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
       <svg id="ico-play" viewBox="0 0 24 24" hidden><path d="M8 5v14l11-7z"/></svg>
     </button>
     <div class="speed" role="group" aria-label="Simulation speed">
       <span>Speed</span>
-      <button type="button" data-speed="1" aria-pressed="true">1×</button>
+      <button type="button" data-speed="real" aria-pressed="true" title="One second per second">Real</button>
+      <button type="button" data-speed="1" aria-pressed="false">1×</button>
       <button type="button" data-speed="2" aria-pressed="false">2×</button>
       <button type="button" data-speed="4" aria-pressed="false">4×</button>
       <button type="button" data-speed="8" aria-pressed="false">8×</button>
@@ -82,16 +83,14 @@
 'use strict';
 const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const SYNODIC = 29.530589;          // days from new moon to new moon
-const TILT = 23.44 * D2R;           // axial tilt; the axis holds its direction in space while the Earth circles the Sun
-const YEAR = 365.2422;              // days
-const T_JUNE = 171.5;               // June solstice, t counted from Jan 1 (mean) midnight in Atlanta
-const T_NEW = 169;                  // a new moon near the solstice
-const T0 = T_JUNE + 2 / 24 + 2.6;   // start: June 24, about 2 pm, waxing crescent
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+const TILT = 23.44 * D2R;           // obliquity of the ecliptic (axial tilt)
+const MOON_INC = 5.145 * D2R;       // inclination of the Moon's orbit to the ecliptic
 const MOON_RATIO = 0.2725;          // Moon radius / Earth radius (to scale)
-const ATL = { lat: 33.749 * D2R, lon: -84.388 * D2R };
 const SUN = [1, 0, 0];              // sunlight arrives from +x (screen right)
+const EPOCH = Date.UTC(2000, 0, 1, 12); // J2000.0; t counts days from here, so the sky matches real dates
+const nowDays = () => (Date.now() - EPOCH) / 86400000;
+// Where the viewer is. Atlanta until the lookup below answers.
+let loc = { name: 'Atlanta', lat: 33.749 * D2R, lon: -84.388 * D2R, tz: 'America/New_York' };
 
 const sky = document.getElementById('sky'), ctx = sky.getContext('2d');
 const phaseC = document.getElementById('phase'), pg = phaseC.getContext('2d');
@@ -101,7 +100,8 @@ const els = { play: $('play'), icoPlay: $('ico-play'), icoPause: $('ico-pause'),
 
 let W = 0, H = 0, DPR = 1, cx = 0, cy = 0, Re = 60, Rm = 200, Mr = 16, sunR = 40;
 const BASE_SPEED = 0.25;             // days per second at 1x (one day every 4 s)
-let t = T0, elev = 0.6, speed = BASE_SPEED;
+const REAL_SPEED = 1 / 86400;        // one second per second
+let t = nowDays(), offset = 0, elev = 0.6, speed = REAL_SPEED; // offset: sim time minus real time, kept while running at real speed
 let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 let dirty = true, drag = null, stars = null, earthSp = null, moonSp = null;
 
@@ -252,40 +252,46 @@ function renderSphere(sp, tex, M, o) {
 }
 
 // ---------- state helpers ----------
-// In this Sun-fixed frame the axis direction swings around once a year (clockwise, since the Earth
-// orbits counterclockwise), and the spin about the axis runs at the sidereal rate so that the Sun
-// still returns to a meridian once per mean solar day.
-const phi = () => -TAU * (t - T_JUNE) / YEAR;             // tilt direction: toward the Sun at the June solstice
-const theta = () => THETA0 + TAU * t * (1 + 1 / YEAR);    // Earth spin about its axis (sidereal)
-const bodyToWorld = () => mul(Rz(phi()), mul(Ry(TILT), Rz(theta())));
-const alpha = () => TAU * (t - T_NEW) / SYNODIC;          // Moon orbit angle (longitude) from the Sun direction
-// The Moon's orbit is inclined 5.14 degrees to the Earth's. Its line of nodes holds still in space apart from
-// a slow regression (one turn per 18.61 years), so in this Sun-fixed frame the nodes turn once a year plus that.
-const MOON_INC = 5.145 * D2R, NODE_PERIOD = 18.61 * YEAR;
+// Low-precision ephemeris (good to a fraction of a degree) in days from J2000. The world frame keeps the Sun
+// at +x, so it is the ecliptic frame turned back by the Sun's longitude: the Earth's axis holds its direction
+// in space and so swings around once a year here, and the Moon's line of nodes turns with it.
+const wrap = (deg) => ((deg % 360) + 360) % 360;
+const sunMeanAnomaly = () => wrap(357.528 + 0.9856003 * t) * D2R;
+function sunLon() { const g = sunMeanAnomaly(); return wrap(280.460 + 0.9856474 * t + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * D2R; }
+const gmst = () => wrap(280.46061837 + 360.98564736629 * t) * D2R;            // Greenwich sidereal angle
+function moonLon() {
+  const Mm = (134.963 + 13.064993 * t) * D2R, D = (297.850 + 12.190749 * t) * D2R;
+  return wrap(218.316 + 13.176396 * t + 6.289 * Math.sin(Mm) + 1.274 * Math.sin(2 * D - Mm) + 0.658 * Math.sin(2 * D)) * D2R;
+}
+const moonNode = () => wrap(125.1228 - 0.0529538 * t) * D2R;                     // ascending node, regresses once per 18.6 years
 const Rx = (a) => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, -s, 0, s, c]; };
-const nodeLon = () => -TAU * t / YEAR - TAU * t / NODE_PERIOD;
+const bodyToWorld = () => mul(Rz(-sunLon()), mul(Rx(-TILT), Rz(gmst())));
+const alpha = () => moonLon() - sunLon();                 // Moon's elongation: its orbit angle from the Sun direction
+const nodeLon = () => moonNode() - sunLon();
 const orbitToWorld = () => mul(Rz(nodeLon()), Rx(MOON_INC));
-// Position on the orbit, in Earth radii = 1, for a longitude `lon` measured from the Sun direction.
+// Position on the orbit, in orbit radii = 1, for a longitude `lon` measured from the Sun direction.
 const moonPos = (lon, O2W, om) => apply(O2W, [Math.cos(lon - om), Math.sin(lon - om), 0]);
+const realSpeed = () => speed <= REAL_SPEED * 1.001;
 const fastRunning = () => playing && !drag && speed > BASE_SPEED * 1.001;
-const phaseFrac = () => ((((t - T_NEW) % SYNODIC) + SYNODIC) % SYNODIC) / SYNODIC;
-// Pick THETA0 so that t = 0 is mean midnight in Atlanta.
-const THETA0 = (() => { const s = apply(mul(Ry(-TILT), Rz(-TAU * T_JUNE / YEAR)), SUN); return Math.atan2(s[1], s[0]) - ATL.lon - Math.PI; })();
-function calendar() {
-  let d = Math.floor((((t % YEAR) + YEAR) % YEAR)); let m = 0;
-  while (m < 11 && d >= MONTH_DAYS[m]) { d -= MONTH_DAYS[m]; m++; }
-  const doy = (((t % YEAR) + YEAR) % YEAR);
-  const season = doy < 80.2 || doy >= 354.1 ? 'winter' : doy < T_JUNE ? 'spring' : doy < 262.8 ? 'summer' : 'autumn'; // northern, from the sim's own solstice
-  return { label: `${MONTHS[m]} ${d + 1}`, season };
+const phaseFrac = () => (((alpha() / TAU) % 1) + 1) % 1;
+function season() {
+  const q = Math.floor(sunLon() / (Math.PI / 2));          // from the Sun's longitude: 0 = March equinox
+  const north = ['spring', 'summer', 'autumn', 'winter'][q];
+  return loc.lat < 0 ? ['autumn', 'winter', 'spring', 'summer'][q] : north;
 }
 function phaseName(f) {
   const q = [[0, 'New moon'], [0.25, 'First quarter'], [0.5, 'Full moon'], [0.75, 'Last quarter'], [1, 'New moon']];
   for (const [p, n] of q) if (Math.abs(f - p) < 0.02) return n;
   return f < 0.25 ? 'Waxing crescent' : f < 0.5 ? 'Waxing gibbous' : f < 0.75 ? 'Waning gibbous' : 'Waning crescent';
 }
-function atlantaWorld() {
-  const cl = Math.cos(ATL.lat);
-  return apply(bodyToWorld(), [cl * Math.cos(ATL.lon), cl * Math.sin(ATL.lon), Math.sin(ATL.lat)]);
+function locWorld() {
+  const cl = Math.cos(loc.lat);
+  return apply(bodyToWorld(), [cl * Math.cos(loc.lon), cl * Math.sin(loc.lon), Math.sin(loc.lat)]);
+}
+const simDate = () => new Date(EPOCH + t * 86400000);
+function fmt(opts) {
+  try { return new Intl.DateTimeFormat('en-US', { timeZone: loc.tz || undefined, ...opts }).format(simDate()); }
+  catch { return new Intl.DateTimeFormat('en-US', opts).format(simDate()); }
 }
 const toScreen = ([x, y, z], r) => [cx + x * r, cy - (y * Math.sin(elev) + z * Math.cos(elev)) * r];
 const depth = ([, y, z]) => -y * Math.cos(elev) + z * Math.sin(elev);
@@ -314,6 +320,7 @@ function layout() {
   Re = Math.min(0.12 * Math.min(W, H), 100);
   Mr = MOON_RATIO * Re;
   Rm = Math.min(cx - Mr - 14, W - sunClear - cx - Mr - 8, (availH / 2 - Mr - 6) / Math.max(Math.sin(elev), 0.25));
+  Rm = Math.max(Rm, 12);                                   // a hidden or tiny window must not go negative
   if (Rm < 3 * Re) { Re = Rm / 3; Mr = MOON_RATIO * Re; }
   if (!earthSp || earthSp.diam !== 2 * Re) earthSp = sprite(2 * Re);
   if (!moonSp || moonSp.diam !== 2 * Mr) moonSp = sprite(2 * Mr);
@@ -389,14 +396,14 @@ function draw() {
   ctx.fillStyle = northFront ? 'rgba(245,245,247,.8)' : 'rgba(245,245,247,.45)'; ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif';
   ctx.textAlign = 'center'; const [nx, ny] = axisPt(1.55); ctx.fillText('N', nx, ny + 4);
 
-  // Atlanta marker
-  const atl = atlantaWorld();
+  // Viewer's location
+  const atl = locWorld();
   if (depth(atl) > 0.04) {
     const [px, py] = toScreen(atl, Re);
     ctx.beginPath(); ctx.arc(px, py, 3.5, 0, TAU); ctx.fillStyle = '#ff5a4a'; ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif'; ctx.textAlign = 'left';
-    if (!fastRunning()) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText('Atlanta', px + 8, py + 5); ctx.fillStyle = '#fff'; ctx.fillText('Atlanta', px + 7, py + 4); }
+    if (!fastRunning()) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText(loc.name, px + 8, py + 5); ctx.fillStyle = '#fff'; ctx.fillText(loc.name, px + 7, py + 4); }
   }
 
   orbitHalf(true);
@@ -423,18 +430,19 @@ function drawPhase(a) {
 }
 
 function updateReadout(atl) {
-  // While the clock runs, show the hour only; when paused or dragging, show quarter hours.
-  const q = Math.floor((((t % 1) + 1) % 1) * 96), h24 = Math.floor(q / 4), h12 = h24 % 12 || 12, ap = h24 < 12 ? 'am' : 'pm';
-  const clock = playing && !drag ? `${h12} ${ap}` : `${h12}:${String((q % 4) * 15).padStart(2, '0')} ${ap}`;
+  // At real speed or when paused, show the minute; at 1x the clock only shows the hour so it does not flicker.
+  const exact = realSpeed() || !playing || drag;
+  const clock = fmt(exact ? { hour: 'numeric', minute: '2-digit' } : { hour: 'numeric' }).toLowerCase();
+  const date = fmt({ month: 'short', day: 'numeric', year: 'numeric' });
   const isDay = atl[0] > 0;
   const f = phaseFrac(), lit = Math.round((1 - Math.cos(TAU * f)) / 2 * 100);
-  const cal = calendar();
   if (fastRunning()) { // above 1x the fine detail just flickers
-    els.read1.innerHTML = `<b>${cal.label}</b> (${cal.season})`;
+    els.read1.innerHTML = `<b>${date}</b> (${season()})`;
     els.read2.innerHTML = `<b>${phaseName(f)}</b>`;
     return;
   }
-  els.read1.innerHTML = `<b>${cal.label}</b> (${cal.season}) · Atlanta <b>${clock}</b> · ${isDay ? 'daylight' : 'night'}`;
+  const live = realSpeed() && playing && !drag && Math.abs(offset) < 1 / 1440 ? ' · live' : '';
+  els.read1.innerHTML = `<b>${date}</b> (${season()}) · ${loc.name} <b>${clock}</b> · ${isDay ? 'daylight' : 'night'}${live}`;
   els.read2.innerHTML = `<b>${phaseName(f)}</b> · ${lit}% lit · ${(f * SYNODIC).toFixed(1)} days after new moon`;
 }
 
@@ -465,9 +473,9 @@ sky.addEventListener('pointermove', (e) => {
   const p = { x: e.clientX, y: e.clientY };
   if (drag.mode === 'moon') {
     const a = moonAngleAt(p); let da = a - drag.a; da -= TAU * Math.round(da / TAU);
-    t += da / TAU * SYNODIC; drag.a = a;
+    setT(t + da / TAU * SYNODIC); drag.a = a;
   } else if (drag.mode === 'earth') {
-    t += (p.x - drag.x) / Re / TAU;
+    setT(t + (p.x - drag.x) / Re / TAU);
   } else {
     elev = Math.max(0.2, Math.min(1.5, elev + (p.y - drag.y) * 0.006)); layout();
   }
@@ -477,35 +485,51 @@ const endDrag = (e) => { if (drag && e.pointerId === drag.id) { drag = null; sky
 sky.addEventListener('pointerup', endDrag); sky.addEventListener('pointercancel', endDrag);
 sky.addEventListener('wheel', (e) => { e.preventDefault(); elev = Math.max(0.2, Math.min(1.5, elev + e.deltaY * 0.003)); layout(); }, { passive: false });
 
+function setT(v) { t = v; offset = t - nowDays(); dirty = true; }
 function setPlaying(v) {
+  if (v && !playing) offset = t - nowDays();            // resume from where it paused, not from now
   playing = v; els.icoPlay.toggleAttribute('hidden', v); els.icoPause.toggleAttribute('hidden', !v); els.play.setAttribute('aria-label', v ? 'Pause' : 'Play');
   dirty = true;
 }
 els.play.addEventListener('click', () => setPlaying(!playing));
-function setSpeed(mult) {
-  speed = BASE_SPEED * mult; dirty = true;
-  els.speedBtns.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === mult)));
+function setSpeed(key) {
+  speed = key === 'real' ? REAL_SPEED : BASE_SPEED * Number(key);
+  offset = t - nowDays(); dirty = true;
+  els.speedBtns.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.speed === String(key))));
 }
-els.speedBtns.forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
-els.reset.addEventListener('click', () => { t = T0; elev = 0.6; setSpeed(1); layout(); });
+els.speedBtns.forEach((b) => b.addEventListener('click', () => setSpeed(b.dataset.speed)));
+els.reset.addEventListener('click', () => { t = nowDays(); offset = 0; elev = 0.6; setSpeed('real'); layout(); });
 addEventListener('keydown', (e) => {
   if (e.target !== document.body && e.target !== sky) return;
   if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
-  else if (e.code === 'ArrowRight') { t += e.shiftKey ? 1 : 1 / 24; dirty = true; }
-  else if (e.code === 'ArrowLeft') { t -= e.shiftKey ? 1 : 1 / 24; dirty = true; }
+  else if (e.code === 'ArrowRight') setT(t + (e.shiftKey ? 1 : 1 / 24));
+  else if (e.code === 'ArrowLeft') setT(t - (e.shiftKey ? 1 : 1 / 24));
 });
 
 // ---------- loop ----------
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000); last = now;
-  if (playing && !drag) { t += speed * dt; dirty = true; }
+  if (playing && !drag) { t = realSpeed() ? nowDays() + offset : t + speed * dt; dirty = true; }
   if (dirty) { draw(); dirty = false; }
   requestAnimationFrame(frame);
 }
 addEventListener('resize', resize);
-window.__earthMoon = { state: () => ({ t, elev, cx, cy, Re, Rm, Mr, playing, axis: apply(bodyToWorld(), [0, 0, 1]), atl: atlantaWorld(), cal: calendar(), moon: toScreen(moonPos(alpha(), orbitToWorld(), nodeLon()), Rm) }), set: (v) => { if ('t' in v) t = v.t; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
-setPlaying(playing); setSpeed(1);
+window.__earthMoon = { state: () => ({ t, offset, speed, elev, cx, cy, Re, Rm, Mr, playing, loc, sunLon: sunLon(), moonLon: moonLon(), gmst: gmst(), axis: apply(bodyToWorld(), [0, 0, 1]), atl: locWorld(), date: fmt({ month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }), season: season(), moon: toScreen(moonPos(alpha(), orbitToWorld(), nodeLon()), Rm) }), tick: () => draw(), set: (v) => { if ('t' in v) setT(v.t); if ('loc' in v) loc = v.loc; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
+setPlaying(playing); setSpeed('real');
+// Put the red dot where the viewer is (by IP) and read the clock in their time zone. Atlanta if every lookup fails.
+const GEO = [
+  ['https://get.geojs.io/v1/ip/geo.json', (j) => ({ name: j.city, lat: +j.latitude, lon: +j.longitude, tz: j.timezone })],
+  ['https://ipwho.is/', (j) => j.success && { name: j.city, lat: +j.latitude, lon: +j.longitude, tz: j.timezone && j.timezone.id }],
+];
+(async () => {
+  for (const [url, pick] of GEO) {
+    try {
+      const g = pick(await (await fetch(url, { signal: AbortSignal.timeout(6000) })).json());
+      if (g && Number.isFinite(g.lat) && Number.isFinite(g.lon)) { loc = { name: g.name || 'You', lat: g.lat * D2R, lon: g.lon * D2R, tz: g.tz }; dirty = true; return; }
+    } catch {}
+  }
+})();
 resize();
 requestAnimationFrame(frame);
 })();
