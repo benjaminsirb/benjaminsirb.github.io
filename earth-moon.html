@@ -258,7 +258,15 @@ function renderSphere(sp, tex, M, o) {
 const phi = () => -TAU * (t - T_JUNE) / YEAR;             // tilt direction: toward the Sun at the June solstice
 const theta = () => THETA0 + TAU * t * (1 + 1 / YEAR);    // Earth spin about its axis (sidereal)
 const bodyToWorld = () => mul(Rz(phi()), mul(Ry(TILT), Rz(theta())));
-const alpha = () => TAU * (t - T_NEW) / SYNODIC;          // Moon orbit angle from the Sun direction
+const alpha = () => TAU * (t - T_NEW) / SYNODIC;          // Moon orbit angle (longitude) from the Sun direction
+// The Moon's orbit is inclined 5.14 degrees to the Earth's. Its line of nodes holds still in space apart from
+// a slow regression (one turn per 18.61 years), so in this Sun-fixed frame the nodes turn once a year plus that.
+const MOON_INC = 5.145 * D2R, NODE_PERIOD = 18.61 * YEAR;
+const Rx = (a) => { const c = Math.cos(a), s = Math.sin(a); return [1, 0, 0, 0, c, -s, 0, s, c]; };
+const nodeLon = () => -TAU * t / YEAR - TAU * t / NODE_PERIOD;
+const orbitToWorld = () => mul(Rz(nodeLon()), Rx(MOON_INC));
+// Position on the orbit, in Earth radii = 1, for a longitude `lon` measured from the Sun direction.
+const moonPos = (lon, O2W, om) => apply(O2W, [Math.cos(lon - om), Math.sin(lon - om), 0]);
 const phaseFrac = () => ((((t - T_NEW) % SYNODIC) + SYNODIC) % SYNODIC) / SYNODIC;
 // Pick THETA0 so that t = 0 is mean midnight in Atlanta.
 const THETA0 = (() => { const s = apply(mul(Ry(-TILT), Rz(-TAU * T_JUNE / YEAR)), SUN); return Math.atan2(s[1], s[0]) - ATL.lon - Math.PI; })();
@@ -338,11 +346,19 @@ function draw() {
   ctx.fillStyle = 'rgba(161,161,166,.8)'; ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif';
   if (W >= 600) ctx.fillText('390× farther than the Moon', W - 14, sunY + sunR + 33);
 
-  // Moon orbit
-  ctx.setLineDash([3, 6]); ctx.lineWidth = 1;
-  ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.ellipse(cx, cy, Rm, Rm * se, 0, Math.PI, TAU); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.ellipse(cx, cy, Rm, Rm * se, 0, 0, Math.PI); ctx.stroke();
-  ctx.setLineDash([]);
+  // Moon orbit: far half now, near half after the Earth
+  const O2W = orbitToWorld(), om = nodeLon();
+  const orbitHalf = (front) => {
+    ctx.setLineDash([3, 6]); ctx.lineWidth = 1; ctx.strokeStyle = front ? 'rgba(255,255,255,.4)' : 'rgba(255,255,255,.2)';
+    ctx.beginPath(); let pen = false;
+    for (let i = 0; i <= 240; i++) {
+      const p = moonPos(TAU * i / 240, O2W, om);
+      if ((depth(p) > 0) !== front) { pen = false; continue; }
+      const [x, y] = toScreen(p, Rm); if (pen) ctx.lineTo(x, y); else ctx.moveTo(x, y); pen = true;
+    }
+    ctx.stroke(); ctx.setLineDash([]);
+  };
+  orbitHalf(false);
 
   // Earth axis (full line behind, the near tip redrawn in front)
   const axis = apply(B2W, [0, 0, 1]);
@@ -351,11 +367,11 @@ function draw() {
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
   ctx.beginPath(); ctx.moveTo(...axisPt(-1.35)); ctx.lineTo(...axisPt(1.35)); ctx.stroke(); ctx.setLineDash([]);
 
-  const moonW = [Rm * Math.cos(a), Rm * Math.sin(a), 0];
-  const [mx, my] = toScreen(moonW, 1);
+  const moonW = moonPos(a, O2W, om);
+  const [mx, my] = toScreen(moonW, Rm);
   const moonFront = depth(moonW) > 0;
   const drawMoon = () => {
-    renderSphere(moonSp, MOON_TEX, Rz(-(a + Math.PI)), MOON_SHADE);
+    renderSphere(moonSp, MOON_TEX, Rz(-(Math.atan2(moonW[1], moonW[0]) + Math.PI)), MOON_SHADE); // near side faces Earth
     ctx.drawImage(moonSp.c, mx - Mr, my - Mr, 2 * Mr, 2 * Mr);
   };
   if (!moonFront) drawMoon();
@@ -382,6 +398,7 @@ function draw() {
     ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText('Atlanta', px + 8, py + 5); ctx.fillStyle = '#fff'; ctx.fillText('Atlanta', px + 7, py + 4);
   }
 
+  orbitHalf(true);
   if (moonFront) drawMoon();
 
   drawPhase(a);
@@ -416,9 +433,16 @@ function updateReadout(atl) {
 }
 
 // ---------- interaction ----------
-const moonAngleAt = (p) => Math.atan2((cy - p.y) / Math.sin(elev), p.x - cx);
+// Longitude of the point on the Moon's orbital plane under the pointer (orthographic unprojection).
+function moonAngleAt(p) {
+  const se = Math.sin(elev), ce = Math.cos(elev), n = apply(orbitToWorld(), [0, 0, 1]);
+  const sx = (p.x - cx) / Rm, sy = (cy - p.y) / Rm;           // screen right / up, in orbit radii
+  const nt = -n[1] * ce + n[2] * se;                          // plane normal along the view direction
+  const d = Math.abs(nt) < 0.05 ? 0 : -(sx * n[0] + sy * (n[1] * se + n[2] * ce)) / nt;
+  return Math.atan2(sy * se - d * ce, sx);
+}
 function hit(p) {
-  const [mx, my] = toScreen([Rm * Math.cos(alpha()), Rm * Math.sin(alpha()), 0], 1);
+  const [mx, my] = toScreen(moonPos(alpha(), orbitToWorld(), nodeLon()), Rm);
   if (Math.hypot(p.x - mx, p.y - my) <= Math.max(Mr + 8, 24)) return 'moon';
   if (Math.hypot(p.x - cx, p.y - cy) <= Re + 6) return 'earth';
   return 'view';
@@ -439,13 +463,13 @@ sky.addEventListener('pointermove', (e) => {
   } else if (drag.mode === 'earth') {
     t += (p.x - drag.x) / Re / TAU;
   } else {
-    elev = Math.max(0.12, Math.min(1.5, elev + (p.y - drag.y) * 0.006)); layout();
+    elev = Math.max(0.2, Math.min(1.5, elev + (p.y - drag.y) * 0.006)); layout();
   }
   drag.x = p.x; drag.y = p.y; dirty = true;
 });
 const endDrag = (e) => { if (drag && e.pointerId === drag.id) { drag = null; sky.classList.remove('dragging'); } };
 sky.addEventListener('pointerup', endDrag); sky.addEventListener('pointercancel', endDrag);
-sky.addEventListener('wheel', (e) => { e.preventDefault(); elev = Math.max(0.12, Math.min(1.5, elev + e.deltaY * 0.003)); layout(); }, { passive: false });
+sky.addEventListener('wheel', (e) => { e.preventDefault(); elev = Math.max(0.2, Math.min(1.5, elev + e.deltaY * 0.003)); layout(); }, { passive: false });
 
 function setPlaying(v) {
   playing = v; els.icoPlay.toggleAttribute('hidden', v); els.icoPause.toggleAttribute('hidden', !v); els.play.setAttribute('aria-label', v ? 'Pause' : 'Play');
@@ -474,7 +498,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 addEventListener('resize', resize);
-window.__earthMoon = { state: () => ({ t, elev, cx, cy, Re, Rm, Mr, playing, axis: apply(bodyToWorld(), [0, 0, 1]), atl: atlantaWorld(), cal: calendar() }), set: (v) => { if ('t' in v) t = v.t; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
+window.__earthMoon = { state: () => ({ t, elev, cx, cy, Re, Rm, Mr, playing, axis: apply(bodyToWorld(), [0, 0, 1]), atl: atlantaWorld(), cal: calendar(), moon: toScreen(moonPos(alpha(), orbitToWorld(), nodeLon()), Rm) }), set: (v) => { if ('t' in v) t = v.t; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
 setPlaying(playing); setSpeed(1);
 resize();
 requestAnimationFrame(frame);
