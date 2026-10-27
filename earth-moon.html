@@ -267,6 +267,7 @@ const nodeLon = () => -TAU * t / YEAR - TAU * t / NODE_PERIOD;
 const orbitToWorld = () => mul(Rz(nodeLon()), Rx(MOON_INC));
 // Position on the orbit, in Earth radii = 1, for a longitude `lon` measured from the Sun direction.
 const moonPos = (lon, O2W, om) => apply(O2W, [Math.cos(lon - om), Math.sin(lon - om), 0]);
+const fastRunning = () => playing && !drag && speed > BASE_SPEED * 1.001;
 const phaseFrac = () => ((((t - T_NEW) % SYNODIC) + SYNODIC) % SYNODIC) / SYNODIC;
 // Pick THETA0 so that t = 0 is mean midnight in Atlanta.
 const THETA0 = (() => { const s = apply(mul(Ry(-TILT), Rz(-TAU * T_JUNE / YEAR)), SUN); return Math.atan2(s[1], s[0]) - ATL.lon - Math.PI; })();
@@ -395,7 +396,7 @@ function draw() {
     ctx.beginPath(); ctx.arc(px, py, 3.5, 0, TAU); ctx.fillStyle = '#ff5a4a'; ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.2; ctx.stroke();
     ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif'; ctx.textAlign = 'left';
-    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText('Atlanta', px + 8, py + 5); ctx.fillStyle = '#fff'; ctx.fillText('Atlanta', px + 7, py + 4);
+    if (!fastRunning()) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText('Atlanta', px + 8, py + 5); ctx.fillStyle = '#fff'; ctx.fillText('Atlanta', px + 7, py + 4); }
   }
 
   orbitHalf(true);
@@ -428,6 +429,11 @@ function updateReadout(atl) {
   const isDay = atl[0] > 0;
   const f = phaseFrac(), lit = Math.round((1 - Math.cos(TAU * f)) / 2 * 100);
   const cal = calendar();
+  if (fastRunning()) { // above 1x the fine detail just flickers
+    els.read1.innerHTML = `<b>${cal.label}</b> (${cal.season})`;
+    els.read2.innerHTML = `<b>${phaseName(f)}</b>`;
+    return;
+  }
   els.read1.innerHTML = `<b>${cal.label}</b> (${cal.season}) · Atlanta <b>${clock}</b> · ${isDay ? 'daylight' : 'night'}`;
   els.read2.innerHTML = `<b>${phaseName(f)}</b> · ${lit}% lit · ${(f * SYNODIC).toFixed(1)} days after new moon`;
 }
@@ -477,7 +483,7 @@ function setPlaying(v) {
 }
 els.play.addEventListener('click', () => setPlaying(!playing));
 function setSpeed(mult) {
-  speed = BASE_SPEED * mult;
+  speed = BASE_SPEED * mult; dirty = true;
   els.speedBtns.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === mult)));
 }
 els.speedBtns.forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
