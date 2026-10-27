@@ -33,9 +33,10 @@
   .panel button:hover { background: rgba(255,255,255,.12); }
   .panel button svg { width: 18px; height: 18px; fill: currentColor; }
   .panel svg[hidden] { display: none; }
-  .speed { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .speed label { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
-  .speed input { width: 100%; margin: 0; accent-color: var(--accent); }
+  .speed { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+  .speed span { font-size: 12px; color: var(--muted); margin-right: 4px; }
+  .panel .speed button { width: auto; height: 30px; padding: 0 11px; font-size: 13px; }
+  .panel .speed button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
   #play { grid-column: 1; grid-row: 1; }
   .speed { grid-column: 2; grid-row: 1; }
   #phase { width: 48px; height: 48px; grid-column: 3; grid-row: 1 / 3; }
@@ -45,7 +46,7 @@
   .bottom { position: fixed; }
   .panel { position: relative; }
   .tools button { width: auto; height: 28px; padding: 0 12px; font-size: 12px; border-radius: 980px; }
-  @media (max-width: 480px) { .top p { font-size: 12px; } .read { font-size: 12px; } }
+  @media (max-width: 480px) { .top p { font-size: 12px; } .read { font-size: 12px; } .speed span { display: none; } .speed { gap: 4px; } .panel .speed button { padding: 0 9px; font-size: 12px; } }
 </style>
 </head>
 <body>
@@ -63,9 +64,12 @@
       <svg id="ico-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
       <svg id="ico-play" viewBox="0 0 24 24" hidden><path d="M8 5v14l11-7z"/></svg>
     </button>
-    <div class="speed">
-      <label for="speed"><span>Speed</span><span id="speedlbl"></span></label>
-      <input id="speed" type="range" min="0" max="100" value="41" aria-label="Simulation speed">
+    <div class="speed" role="group" aria-label="Simulation speed">
+      <span>Speed</span>
+      <button type="button" data-speed="1" aria-pressed="true">1×</button>
+      <button type="button" data-speed="2" aria-pressed="false">2×</button>
+      <button type="button" data-speed="4" aria-pressed="false">4×</button>
+      <button type="button" data-speed="8" aria-pressed="false">8×</button>
     </div>
     <canvas id="phase" title="The Moon as seen from Earth"></canvas>
     <div class="read"><span id="read1"></span><span id="read2"></span></div>
@@ -86,11 +90,12 @@ const SUN = [1, 0, 0];              // sunlight arrives from +x (screen right)
 const sky = document.getElementById('sky'), ctx = sky.getContext('2d');
 const phaseC = document.getElementById('phase'), pg = phaseC.getContext('2d');
 const $ = (id) => document.getElementById(id);
-const els = { play: $('play'), icoPlay: $('ico-play'), icoPause: $('ico-pause'), speed: $('speed'), speedlbl: $('speedlbl'),
+const els = { play: $('play'), icoPlay: $('ico-play'), icoPause: $('ico-pause'), speedBtns: [...document.querySelectorAll('.speed button')],
   read1: $('read1'), read2: $('read2'), reset: $('reset'), top: document.querySelector('.top'), panel: document.querySelector('.panel') };
 
 let W = 0, H = 0, DPR = 1, cx = 0, cy = 0, Re = 60, Rm = 200, Mr = 16, sunR = 40;
-let t = 2.6, elev = 0.6, speed = 0.25;
+const BASE_SPEED = 0.25;             // days per second at 1x (one day every 4 s)
+let t = 2.6, elev = 0.6, speed = BASE_SPEED;
 let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
 let dirty = true, drag = null, stars = null, earthSp = null, moonSp = null;
 
@@ -373,7 +378,7 @@ function drawPhase(a) {
 }
 
 function updateReadout(atl) {
-  const h = (((t % 1) + 1) % 1) * 24, hh = String(Math.floor(h)).padStart(2, '0'), mm = String(Math.floor((h % 1) * 60)).padStart(2, '0');
+  const q = Math.floor((((t % 1) + 1) % 1) * 96), hh = String(Math.floor(q / 4)).padStart(2, '0'), mm = String((q % 4) * 15).padStart(2, '0');
   const isDay = atl[0] > 0;
   const f = phaseFrac(), lit = Math.round((1 - Math.cos(TAU * f)) / 2 * 100);
   els.read1.innerHTML = `Day <b>${Math.floor(t)}</b> · Atlanta <b>${hh}:${mm}</b> · ${isDay ? 'daylight' : 'night'}`;
@@ -416,12 +421,12 @@ function setPlaying(v) {
   playing = v; els.icoPlay.hidden = v; els.icoPause.hidden = !v; els.play.setAttribute('aria-label', v ? 'Pause' : 'Play');
 }
 els.play.addEventListener('click', () => setPlaying(!playing));
-function setSpeed(v) {
-  speed = 0.02 * Math.pow(10, (v / 100) * 2.7);
-  els.speedlbl.textContent = speed < 1 ? `1 s = ${(speed * 24).toFixed(1)} h` : `1 s = ${speed.toFixed(1)} days`;
+function setSpeed(mult) {
+  speed = BASE_SPEED * mult;
+  els.speedBtns.forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.speed) === mult)));
 }
-els.speed.addEventListener('input', () => setSpeed(Number(els.speed.value)));
-els.reset.addEventListener('click', () => { t = 2.6; elev = 0.6; els.speed.value = 41; setSpeed(41); layout(); });
+els.speedBtns.forEach((b) => b.addEventListener('click', () => setSpeed(Number(b.dataset.speed))));
+els.reset.addEventListener('click', () => { t = 2.6; elev = 0.6; setSpeed(1); layout(); });
 addEventListener('keydown', (e) => {
   if (e.target !== document.body && e.target !== sky) return;
   if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
@@ -439,7 +444,7 @@ function frame(now) {
 }
 addEventListener('resize', resize);
 window.__earthMoon = { state: () => ({ t, elev, cx, cy, Re, Rm, Mr, playing }), set: (v) => { if ('t' in v) t = v.t; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
-setPlaying(playing); setSpeed(Number(els.speed.value));
+setPlaying(playing); setSpeed(1);
 resize();
 requestAnimationFrame(frame);
 })();
