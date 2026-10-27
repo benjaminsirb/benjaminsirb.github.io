@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Earth &amp; Moon</title>
+<meta name="description" content="A draggable Earth and Moon: watch the Moon orbit, the Earth spin, and day turn to night.">
+<meta name="theme-color" content="#05070f">
+<style>
+  :root { --text: #f5f5f7; --muted: #a1a1a6; --accent: #2997ff; --panel: rgba(18, 20, 30, .74); --line: rgba(255,255,255,.14); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #05070f; color: var(--text); overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased; font-size: 15px; line-height: 1.4; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  #sky { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #sky.dragging { cursor: grabbing; }
+  .hud { position: fixed; left: 0; right: 0; padding: 0 16px; pointer-events: none; }
+  .hud > * { pointer-events: auto; }
+  .top { top: 0; padding-top: max(14px, env(safe-area-inset-top)); }
+  .top .row { display: flex; align-items: baseline; gap: 14px; }
+  .top .back { font-size: 14px; color: var(--muted); }
+  .top .back:hover { color: var(--text); text-decoration: none; }
+  .top h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+  .top p { margin: 4px 0 0; font-size: 13px; color: var(--muted); max-width: 440px; }
+  .bottom { bottom: 0; padding-bottom: max(14px, env(safe-area-inset-bottom)); display: flex; justify-content: center; }
+  .panel { width: min(100%, 560px); background: var(--panel); border: 1px solid var(--line); border-radius: 18px;
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); padding: 10px 14px 12px;
+    display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; gap: 6px 14px; align-items: center; }
+  .panel button { appearance: none; border: 1px solid var(--line); background: rgba(255,255,255,.06); color: var(--text);
+    border-radius: 980px; width: 40px; height: 40px; display: grid; place-items: center; cursor: pointer; padding: 0; }
+  .panel button:hover { background: rgba(255,255,255,.12); }
+  .panel button svg { width: 18px; height: 18px; fill: currentColor; }
+  .panel svg[hidden] { display: none; }
+  .speed { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .speed label { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+  .speed input { width: 100%; margin: 0; accent-color: var(--accent); }
+  #play { grid-column: 1; grid-row: 1; }
+  .speed { grid-column: 2; grid-row: 1; }
+  #phase { width: 48px; height: 48px; grid-column: 3; grid-row: 1 / 3; }
+  .read { grid-column: 1 / 3; grid-row: 2; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 2px 14px; }
+  .read b { color: var(--text); font-weight: 500; }
+  .tools { position: absolute; right: 14px; top: -34px; display: flex; gap: 8px; }
+  .bottom { position: fixed; }
+  .panel { position: relative; }
+  .tools button { width: auto; height: 28px; padding: 0 12px; font-size: 12px; border-radius: 980px; }
+  @media (max-width: 480px) { .top p { font-size: 12px; } .read { font-size: 12px; } }
+</style>
+</head>
+<body>
+<canvas id="sky" aria-label="Earth and Moon simulation"></canvas>
+
+<div class="hud top">
+  <div class="row"><a class="back" href="/">&larr; Ben Sirb</a><h1>Earth &amp; Moon</h1></div>
+  <p>Drag the Moon along its orbit. Drag the Earth to spin it. Drag the background to tilt the view. The Sun sits far off to the right.</p>
+</div>
+
+<div class="hud bottom">
+  <div class="panel">
+    <div class="tools"><button id="reset" type="button">Reset</button></div>
+    <button id="play" type="button" aria-label="Pause">
+      <svg id="ico-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      <svg id="ico-play" viewBox="0 0 24 24" hidden><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div class="speed">
+      <label for="speed"><span>Speed</span><span id="speedlbl"></span></label>
+      <input id="speed" type="range" min="0" max="100" value="41" aria-label="Simulation speed">
+    </div>
+    <canvas id="phase" title="The Moon as seen from Earth"></canvas>
+    <div class="read"><span id="read1"></span><span id="read2"></span></div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2, D2R = Math.PI / 180;
+const SYNODIC = 29.530589;          // days from new moon to new moon
+const TILT = 23.44 * D2R;           // axial tilt, leaning toward the Sun (northern summer)
+const MOON_RATIO = 0.2725;          // Moon radius / Earth radius (to scale)
+const ATL = { lat: 33.749 * D2R, lon: -84.388 * D2R };
+const THETA0 = Math.PI - ATL.lon;   // Atlanta sits at local midnight when t = 0
+const SUN = [1, 0, 0];              // sunlight arrives from +x (screen right)
+
+const sky = document.getElementById('sky'), ctx = sky.getContext('2d');
+const phaseC = document.getElementById('phase'), pg = phaseC.getContext('2d');
+const $ = (id) => document.getElementById(id);
+const els = { play: $('play'), icoPlay: $('ico-play'), icoPause: $('ico-pause'), speed: $('speed'), speedlbl: $('speedlbl'),
+  read1: $('read1'), read2: $('read2'), reset: $('reset'), top: document.querySelector('.top'), panel: document.querySelector('.panel') };
+
+let W = 0, H = 0, DPR = 1, cx = 0, cy = 0, Re = 60, Rm = 200, Mr = 16, sunR = 40;
+let t = 2.6, elev = 0.6, speed = 0.25;
+let playing = !matchMedia('(prefers-reduced-motion: reduce)').matches;
+let dirty = true, drag = null, stars = null, earthSp = null, moonSp = null;
+
+// ---------- textures (equirectangular, built once) ----------
+const LAND = [
+  // Eurasia
+  [[-9,43],[-9,37],[-5.5,36],[0,38],[3,42],[7,43.5],[10,44],[12,44],[13.5,43],[16,41.5],[18.5,40],[16,38],[15.5,40],[14,41],[12.5,42],[11,43.5],[13,45.5],[14,45],[16,43.5],[19,42],[20,40],[21,38],[23,36.5],[24,38],[23,40],[26,41],[29,41],[26,40],[27,38],[28,36.5],[31,36.5],[36,36],[36,34],[34.5,31.5],[33,30],[35,28],[39,22],[42.5,15],[44,12.5],[48,14],[53,17],[57,19],[59,23],[56.5,26],[51.5,25],[50,27],[48,30],[50,30],[54,27],[57,25.5],[62,25],[66.5,24.5],[69,22.5],[72.5,21],[73,17],[76,10],[77.5,8],[80,12],[80,16],[84,19],[87,21.5],[90,22],[92,22],[94,18],[97.5,16.5],[98,10],[100,6],[103.5,1.3],[104,3],[103,6],[101,7],[100.5,13],[102,12],[105,9],[109,12],[109,15],[106,20],[108,21.5],[112,22],[117,23.5],[120,27],[122,30],[121,32],[119,35],[122,37],[121,39],[123,40],[125,39.5],[126,37.5],[126,35],[129,35],[129.5,38],[128,40],[130,42.5],[133,43],[138,47],[141,52],[140,54],[138,56],[143,59],[150,59.5],[155,59],[156,52],[162,56],[160,60],[165,61],[170,60],[178,62],[180,65],[180,71],[171,70],[160,70],[150,72],[140,72.5],[130,71.5],[120,73],[113,74],[105,77.5],[95,76],[85,74],[80,72.5],[73,72],[66,70],[60,69],[55,68.5],[50,68.5],[44,68.5],[40,66],[35,66.5],[33,69.5],[31,70.5],[28,71],[24,70.5],[18,69.8],[14,67.5],[12,65],[8,63],[5,61.5],[5.5,59],[7,57.8],[9.5,57.5],[8,55],[8.5,54],[4.5,53],[3,51],[1.5,50.5],[-1.5,49.5],[-4.5,48.5],[-1.5,46.5],[-1.5,43.5],[-8,43.5]],
+  // Africa
+  [[-17,14.7],[-16.5,19],[-17,21],[-13,27.5],[-10,29.5],[-9.5,32],[-6,35.5],[-2,35.2],[0,36],[3,36.8],[8,37],[10,37.3],[11,36],[10.5,33.5],[11,33],[15,32.5],[19,30.5],[20,32.5],[25,32],[29,31],[32.5,31.2],[32.5,29.5],[33.5,27.5],[35,24],[37,21],[38.5,18],[39.5,15.5],[42,13],[43.3,12],[45,11],[48,11],[51,11.8],[51,10.5],[49,7],[47,4],[44,1],[41,-1.5],[40,-3],[39,-5],[39.5,-8],[40.5,-11],[40.5,-15],[39,-17],[35.5,-20],[35.5,-24],[33,-26],[32.5,-29],[30,-31],[27,-33.5],[22,-34.5],[20,-34.8],[18.5,-34.2],[18,-32],[17,-29],[15.5,-27],[14.5,-23],[12,-19],[12,-17],[13,-13],[13.5,-10],[12,-6],[11,-4],[9,-1.5],[9.5,1],[9.5,4],[8.5,4.5],[6,4.3],[3,6.3],[1,6],[-2,5],[-4,5.2],[-8,4.5],[-11,6.5],[-13.5,8],[-15,10.5],[-17,12]],
+  // North America
+  [[-166,61],[-162,58],[-152,58],[-146,60.5],[-140,59.5],[-134,57],[-130,54.5],[-127,50],[-124.5,48.5],[-124,42],[-122,37],[-120.5,34.5],[-117,32.5],[-114.5,30],[-112,26.5],[-110,23],[-110.5,24.5],[-113,28.5],[-114.5,31.5],[-110,28],[-107,25],[-105,21.5],[-100,19],[-96,16],[-92,14.5],[-88,13],[-86,11.5],[-85,9.5],[-83,8],[-79,7.5],[-77,8],[-78,9.5],[-81,9],[-83,11],[-84,15.5],[-88,16],[-88,18],[-87,21.5],[-90.5,21],[-91,19],[-94,18.5],[-97.5,21],[-97,26],[-97.5,28],[-94,29.5],[-90,29],[-89,30.5],[-85,30],[-83,29],[-82.5,27],[-81,25.5],[-80,26.5],[-81,30.5],[-79,33.5],[-76,35],[-76,37],[-75,39],[-74,40.5],[-72,41],[-70,42],[-70.5,43.5],[-67,44.5],[-66,45],[-64,44],[-60,46],[-62,47],[-64,48.5],[-67,49],[-70,48],[-66,50],[-60,50],[-57,51.5],[-56,53],[-60,55.5],[-62,58],[-64,60.5],[-70,62.5],[-76,64],[-80,66],[-85,67],[-90,69],[-95,70],[-102,68],[-110,68.5],[-116,69.5],[-124,70],[-130,70],[-137,69.5],[-142,70],[-150,70.5],[-157,71.3],[-162,70],[-165,68.5],[-166,66],[-162,63.5]],
+  // South America
+  [[-77,8],[-75.5,10.5],[-72,12],[-70,12],[-64,10.5],[-62,10.8],[-60,8.5],[-56,6],[-52,5],[-50,1.5],[-48,-1],[-44,-2.5],[-40,-3],[-35,-5.5],[-35,-9],[-37,-12],[-39,-15],[-39,-18],[-41,-22],[-45,-23.5],[-48,-26],[-49,-29],[-52,-32],[-54,-35],[-57,-38],[-62,-39],[-65,-41.5],[-64,-43],[-66,-45],[-68,-48],[-69,-52],[-68,-54.5],[-72,-55],[-75,-52],[-75,-47],[-74,-42],[-73.5,-37],[-71.5,-32],[-71,-27],[-70.5,-22],[-70,-18],[-74,-15.5],[-76,-13.5],[-78,-10],[-80,-6.5],[-81,-5],[-80.5,-2],[-80,0],[-79,1.5],[-77.5,4],[-77,6.5]],
+  // Australia
+  [[114,-22],[113.5,-26],[115,-32],[115.5,-34.5],[118,-35],[123,-34],[126,-32.5],[131,-31.5],[135.5,-35],[138,-35.5],[140,-37.5],[143,-39],[147,-38.5],[150,-37.5],[151.5,-34],[153.5,-28],[153,-25],[150.5,-22],[148,-20],[146,-18.5],[145.5,-15],[143.5,-13.5],[142.5,-10.8],[141.5,-13],[141,-17],[139,-17.5],[136.5,-15.5],[136,-12],[132,-11.5],[130,-12.5],[129,-15],[126,-14],[124,-16.5],[122,-18],[119,-20],[116,-20.5]],
+  [[145,-40.5],[148,-41],[147.5,-43.5],[145.5,-43]],                                   // Tasmania
+  [[131,-1.5],[134,-1],[136,-2.5],[141,-2.5],[146,-6],[150.5,-10.5],[147,-9.5],[143,-9],[141,-9],[138,-8.5],[135,-4.5],[132,-3]], // New Guinea
+  [[95.5,5.5],[98,4],[104,-1],[106,-6],[104,-5.5],[101,-2.5],[97,1]],                  // Sumatra
+  [[105.5,-6.5],[110,-6.5],[114.5,-8],[112,-8.5],[106,-7.5]],                          // Java
+  [[109,1.5],[109.5,-2],[113,-3.5],[116,-3.5],[117.5,0],[118.5,4],[117,7],[114,4.5],[111,2.5]], // Borneo
+  [[119,0],[121,1.5],[124,1],[122,-2],[120,-5],[119,-3]],                              // Sulawesi
+  [[120,18.5],[122,18],[123,13.5],[120.5,14],[120,16]],                                // Luzon
+  [[130,31],[131,33.5],[135,34],[137,34.5],[140,35.5],[141,38.5],[141.5,41],[140.5,42],[141.5,45.5],[145.5,44],[143.5,42.5],[141,42],[140,41.5],[139.5,39],[137,37],[136,35.5],[133,35.5],[131,34.5],[129.5,32.5]], // Japan
+  [[80,9.8],[81.8,8],[81,6],[80,7.5]],                                                 // Sri Lanka
+  [[44.5,-12.5],[48,-13.5],[50,-15],[50,-19],[48.5,-22],[47,-25],[45,-25],[43.5,-21],[43.5,-17],[44.5,-15]], // Madagascar
+  [[-5,50],[1,51],[2,53],[-2,56],[-3,58],[-6,57],[-5,54],[-3,53],[-5,51]],             // Great Britain
+  [[-10,52],[-6,52],[-6,55],[-10,55]],                                                 // Ireland
+  [[-24,65],[-14,65],[-15,66],[-22,66]],                                               // Iceland
+  [[-85,22],[-82,23],[-77,21.5],[-74,20],[-77,19.8],[-82,22]],                         // Cuba
+  [[-74.5,19.8],[-69,19.8],[-68.5,18.3],[-74.5,18.3]],                                 // Hispaniola
+  [[-80,73.5],[-85,70.5],[-78,69],[-72,70.5],[-68,67.5],[-64,66],[-62,67],[-66,69.5],[-70,71],[-72,73.5],[-77,74]], // Baffin
+  [[-115,69],[-105,69],[-102,71.5],[-108,73],[-115,72.5]],                             // Victoria Island
+  [[173,-35],[178,-38],[176,-41],[173,-43],[168,-46],[166,-45],[171,-42],[174,-40]],   // New Zealand
+];
+const ICE = [
+  [[-53,60],[-48,60.5],[-43,60],[-42,64],[-38,65.5],[-32,68],[-22,70.5],[-20,74],[-18,77],[-20,80],[-30,83],[-45,83],[-60,82],[-70,78.5],[-60,76],[-57,74],[-52,70],[-54,67],[-52,64]], // Greenland
+  [[-90,77],[-78,78],[-72,80],[-70,82.5],[-85,83],[-92,80]],                           // Ellesmere
+  [[-62,-63],[-57,-63],[-60,-68],[-67,-68]],                                           // Antarctic Peninsula
+];
+const SEAS = [
+  [[10.5,54.5],[12,56],[11,58],[12.5,59.5],[17.5,60.5],[17,62],[20,63.5],[21.5,65.5],[25,65.5],[25.5,64],[21,62],[22,60],[26,60.5],[30,60],[28,59.5],[23,58.5],[21,57.5],[21,55.5],[19,54.5],[14,54]], // Baltic
+  [[28,41.5],[28,44],[30,46],[33,46],[36,45],[38,47],[41.5,42],[36,41],[31,41.5]],      // Black Sea
+  [[47,44],[50,47],[53,46],[54,42],[53,39],[51,37],[49,38],[47,41]],                    // Caspian
+  [[-95,58],[-92,62],[-87,64],[-80,63],[-77,58],[-79,52],[-85,53],[-90,56]],           // Hudson Bay
+];
+
+function makeEarthTexture() {
+  const TW = 1024, TH = 512, c = document.createElement('canvas'); c.width = TW; c.height = TH;
+  const g = c.getContext('2d');
+  const X = (lon) => (lon + 180) / 360 * TW, Y = (lat) => (90 - lat) / 180 * TH;
+  const ocean = g.createLinearGradient(0, 0, 0, TH);
+  ocean.addColorStop(0, '#15325f'); ocean.addColorStop(0.5, '#1b5aa5'); ocean.addColorStop(1, '#15325f');
+  g.fillStyle = ocean; g.fillRect(0, 0, TW, TH);
+  const land = g.createLinearGradient(0, 0, 0, TH);
+  [[75, '#8a9a86'], [55, '#4a7d3a'], [38, '#6f9a46'], [24, '#c2a86a'], [10, '#3f8f3c'], [-5, '#3c8a3a'], [-24, '#b89f66'], [-40, '#5e8f48'], [-56, '#7f9a8a']]
+    .forEach(([lat, col]) => land.addColorStop((90 - lat) / 180, col));
+  const poly = (pts, fill) => {
+    g.beginPath(); pts.forEach(([lo, la], i) => (i ? g.lineTo(X(lo), Y(la)) : g.moveTo(X(lo), Y(la)))); g.closePath();
+    g.fillStyle = fill; g.fill();
+  };
+  LAND.forEach((p) => poly(p, land));
+  SEAS.forEach((p) => poly(p, ocean));
+  const ice = '#e9eef5';
+  ICE.forEach((p) => poly(p, ice));
+  g.fillStyle = ice; g.fillRect(0, 0, TW, Y(80)); g.fillRect(0, Y(-66), TW, TH - Y(-66));
+  const d = g.getImageData(0, 0, TW, TH).data;
+  return { W: TW, H: TH, data: d };
+}
+
+function makeMoonTexture() {
+  const TW = 512, TH = 256, c = document.createElement('canvas'); c.width = TW; c.height = TH;
+  const g = c.getContext('2d');
+  const X = (lon) => (lon + 180) / 360 * TW, Y = (lat) => (90 - lat) / 180 * TH;
+  let s = 7; const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  g.fillStyle = '#9d9c98'; g.fillRect(0, 0, TW, TH);
+  for (let i = 0; i < 900; i++) { // tonal grain
+    g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,.06)' : 'rgba(0,0,0,.06)';
+    g.beginPath(); g.arc(rnd() * TW, rnd() * TH, 2 + rnd() * 10, 0, TAU); g.fill();
+  }
+  const maria = [[-18, 32, 24, 11], [12, 26, 18, 10], [30, 9, 22, 13], [52, -4, 13, 11], [-48, 6, 32, 20], [-18, -14, 14, 9], [20, -8, 7, 6], [-30, 22, 10, 7]];
+  g.fillStyle = '#6c6d72';
+  maria.forEach(([lo, la, rx, ry]) => { g.beginPath(); g.ellipse(X(lo), Y(la), rx * TW / 360, ry * TH / 180, 0, 0, TAU); g.fill(); });
+  for (let i = 0; i < 260; i++) { // craters, heavier on the far side
+    const lon = rnd() < 0.65 ? 90 + rnd() * 180 : rnd() * 180 - 90;
+    const lat = Math.asin(rnd() * 2 - 1) / D2R, r = 1.5 + rnd() * rnd() * 9;
+    const x = X(lon > 180 ? lon - 360 : lon), y = Y(lat);
+    g.fillStyle = 'rgba(70,70,74,.55)'; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill();
+    g.strokeStyle = 'rgba(215,215,210,.5)'; g.lineWidth = Math.max(0.8, r * 0.18);
+    g.beginPath(); g.arc(x, y, r, Math.PI * 0.9, Math.PI * 1.9); g.stroke();
+  }
+  g.fillStyle = '#d9d8d2'; g.beginPath(); g.arc(X(-11), Y(-43), 5, 0, TAU); g.fill(); // Tycho
+  const d = g.getImageData(0, 0, TW, TH).data;
+  return { W: TW, H: TH, data: d };
+}
+const EARTH_TEX = makeEarthTexture(), MOON_TEX = makeMoonTexture();
+
+// ---------- sphere raster ----------
+function sprite(diam) {
+  const size = Math.max(4, Math.round(diam * DPR));
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d');
+  return { c, g, size, img: g.createImageData(size, size), diam };
+}
+const EARTH_SHADE = { ambient: 0.05, limb: 0.72, spec: 150, soft0: 0.04, softW: 0.16, nr: 4, ng: 6, nb: 16 };
+const MOON_SHADE = { ambient: 0.07, limb: 0.94, spec: 0, soft0: 0.02, softW: 0.08, nr: 3, ng: 3, nb: 5 };
+
+// theta: spin about the body axis; eps: axis tilt toward +x. Camera sits at elevation `elev` on the -y side.
+function renderSphere(sp, tex, theta, eps, o) {
+  const { size, img } = sp, d = img.data, R = size / 2;
+  const se = Math.sin(elev), ce = Math.cos(elev);
+  const ct = Math.cos(theta), st = Math.sin(theta), cp = Math.cos(eps), sq = Math.sin(eps);
+  const m00 = ct * cp, m01 = st, m02 = -ct * sq, m10 = -st * cp, m11 = ct, m12 = st * sq, m20 = sq, m22 = cp;
+  const sx = SUN[0], sy = SUN[1], sz = SUN[2];
+  let hx = sx, hy = sy - ce, hz = sz + se; const hl = Math.hypot(hx, hy, hz); hx /= hl; hy /= hl; hz /= hl;
+  const TW = tex.W, TH = tex.H, td = tex.data;
+  let i = 0;
+  for (let py = 0; py < size; py++) {
+    const vy = (R - py - 0.5) / R;
+    for (let px = 0; px < size; px++, i += 4) {
+      const vx = (px + 0.5 - R) / R, rr = vx * vx + vy * vy;
+      if (rr >= 1) { d[i + 3] = 0; continue; }
+      const vz = Math.sqrt(1 - rr);
+      const nx = vx, ny = vy * se - vz * ce, nz = vy * ce + vz * se;
+      const bx = m00 * nx + m01 * ny + m02 * nz, by = m10 * nx + m11 * ny + m12 * nz, bz = m20 * nx + m22 * nz;
+      const lat = Math.asin(bz > 1 ? 1 : bz < -1 ? -1 : bz), lon = Math.atan2(by, bx);
+      let tx = ((lon / TAU + 0.5) * TW) | 0; if (tx >= TW) tx = TW - 1; else if (tx < 0) tx = 0;
+      let ty = ((0.5 - lat / Math.PI) * TH) | 0; if (ty >= TH) ty = TH - 1; else if (ty < 0) ty = 0;
+      const k = (ty * TW + tx) * 4, tr = td[k], tg = td[k + 1], tb = td[k + 2];
+      const L = nx * sx + ny * sy + nz * sz;
+      let day = (L + o.soft0) / o.softW; day = day < 0 ? 0 : day > 1 ? 1 : day * day * (3 - 2 * day);
+      const kd = (o.ambient + (1 - o.ambient) * day) * (o.limb + (1 - o.limb) * vz);
+      let spec = 0;
+      if (o.spec && tb > tr + 40) { const nh = nx * hx + ny * hy + nz * hz; if (nh > 0) spec = Math.pow(nh, 50) * o.spec * day; }
+      d[i] = tr * kd + spec + (1 - day) * o.nr;
+      d[i + 1] = tg * kd + spec + (1 - day) * o.ng;
+      d[i + 2] = tb * kd + spec + (1 - day) * o.nb;
+      const edge = (1 - Math.sqrt(rr)) * R + 0.5;
+      d[i + 3] = edge >= 1 ? 255 : edge * 255;
+    }
+  }
+  sp.g.putImageData(img, 0, 0);
+}
+
+// ---------- state helpers ----------
+const theta = () => THETA0 + TAU * t;                    // Earth spin (solar day)
+const alpha = () => TAU * t / SYNODIC;                   // Moon orbit angle from the Sun direction
+const phaseFrac = () => (((t % SYNODIC) + SYNODIC) % SYNODIC) / SYNODIC;
+function phaseName(f) {
+  const q = [[0, 'New moon'], [0.25, 'First quarter'], [0.5, 'Full moon'], [0.75, 'Last quarter'], [1, 'New moon']];
+  for (const [p, n] of q) if (Math.abs(f - p) < 0.02) return n;
+  return f < 0.25 ? 'Waxing crescent' : f < 0.5 ? 'Waxing gibbous' : f < 0.75 ? 'Waning gibbous' : 'Waning crescent';
+}
+function atlantaWorld() {
+  const th = theta(), cl = Math.cos(ATL.lat), x1 = cl * Math.cos(ATL.lon + th), y1 = cl * Math.sin(ATL.lon + th), z1 = Math.sin(ATL.lat);
+  const cp = Math.cos(TILT), sq = Math.sin(TILT);
+  return [x1 * cp + z1 * sq, y1, -x1 * sq + z1 * cp];
+}
+const toScreen = ([x, y, z], r) => [cx + x * r, cy - (y * Math.sin(elev) + z * Math.cos(elev)) * r];
+const depth = ([, y, z]) => -y * Math.cos(elev) + z * Math.sin(elev);
+
+// ---------- layout ----------
+function makeStars() {
+  const c = document.createElement('canvas'); c.width = Math.round(W * DPR); c.height = Math.round(H * DPR);
+  const g = c.getContext('2d'); g.scale(DPR, DPR);
+  let s = 42; const rnd = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const n = Math.round(W * H * 0.00045);
+  for (let i = 0; i < n; i++) {
+    const r = 0.35 + rnd() * 1.1, a = 0.25 + rnd() * 0.65;
+    g.fillStyle = rnd() < 0.12 ? `rgba(190,210,255,${a})` : `rgba(255,255,255,${a})`;
+    g.beginPath(); g.arc(rnd() * W, rnd() * H, r, 0, TAU); g.fill();
+  }
+  return c;
+}
+function layout() {
+  const topH = els.top.getBoundingClientRect().bottom + 6;
+  const bottomH = H - els.panel.getBoundingClientRect().top + 44;
+  sunR = Math.max(26, Math.min(64, 0.08 * Math.min(W, H)));
+  const sunClear = sunR * 0.75 + 14;
+  cx = (W - sunClear) / 2 + 6;
+  const availH = Math.max(120, H - topH - bottomH);
+  cy = topH + availH / 2;
+  Re = Math.min(0.12 * Math.min(W, H), 100);
+  Mr = MOON_RATIO * Re;
+  Rm = Math.min(cx - Mr - 14, W - sunClear - cx - Mr - 8, (availH / 2 - Mr - 6) / Math.max(Math.sin(elev), 0.25));
+  if (Rm < 3 * Re) { Re = Rm / 3; Mr = MOON_RATIO * Re; }
+  if (!earthSp || earthSp.diam !== 2 * Re) earthSp = sprite(2 * Re);
+  if (!moonSp || moonSp.diam !== 2 * Mr) moonSp = sprite(2 * Mr);
+  dirty = true;
+}
+function resize() {
+  W = Math.max(1, innerWidth); H = Math.max(1, innerHeight); DPR = Math.min(2, devicePixelRatio || 1);
+  sky.width = Math.round(W * DPR); sky.height = Math.round(H * DPR);
+  phaseC.width = phaseC.height = Math.round(48 * DPR);
+  stars = makeStars(); earthSp = moonSp = null;
+  layout();
+}
+
+// ---------- drawing ----------
+function draw() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = '#05070f'; ctx.fillRect(0, 0, W, H);
+  ctx.drawImage(stars, 0, 0, W, H);
+  const se = Math.sin(elev), ce = Math.cos(elev), a = alpha(), th = theta();
+
+  // Sun, far off to the right
+  const sunX = W + sunR * 0.25, sunY = cy;
+  let g = ctx.createRadialGradient(sunX, sunY, sunR * 0.6, sunX, sunY, sunR * 4.5);
+  g.addColorStop(0, 'rgba(255,214,130,.55)'); g.addColorStop(0.3, 'rgba(255,190,90,.14)'); g.addColorStop(1, 'rgba(255,170,60,0)');
+  ctx.fillStyle = g; ctx.fillRect(sunX - sunR * 4.5, sunY - sunR * 4.5, sunR * 9, sunR * 9);
+  g = ctx.createRadialGradient(sunX - sunR * 0.3, sunY - sunR * 0.3, 0, sunX, sunY, sunR);
+  g.addColorStop(0, '#fff6d0'); g.addColorStop(1, '#ffc24a');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sunX, sunY, sunR, 0, TAU); ctx.fill();
+  ctx.fillStyle = 'rgba(245,245,247,.7)'; ctx.font = '12px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'right'; ctx.fillText('Sun', W - 14, sunY + sunR + 18);
+  ctx.fillStyle = 'rgba(161,161,166,.8)'; ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif';
+  if (W >= 600) ctx.fillText('390× farther than the Moon', W - 14, sunY + sunR + 33);
+
+  // Moon orbit
+  ctx.setLineDash([3, 6]); ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.beginPath(); ctx.ellipse(cx, cy, Rm, Rm * se, 0, Math.PI, TAU); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.ellipse(cx, cy, Rm, Rm * se, 0, 0, Math.PI); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Earth axis (full line behind, north tip redrawn in front)
+  const ax = Math.sin(TILT), ay = Math.cos(TILT) * ce;
+  const axisPt = (k) => [cx + ax * Re * k, cy - ay * Re * k];
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; ctx.setLineDash([2, 4]);
+  ctx.beginPath(); ctx.moveTo(...axisPt(-1.35)); ctx.lineTo(...axisPt(1.35)); ctx.stroke(); ctx.setLineDash([]);
+
+  const moonW = [Rm * Math.cos(a), Rm * Math.sin(a), 0];
+  const [mx, my] = toScreen(moonW, 1);
+  const moonFront = depth(moonW) > 0;
+  const drawMoon = () => {
+    renderSphere(moonSp, MOON_TEX, a + Math.PI, 0, MOON_SHADE);
+    ctx.drawImage(moonSp.c, mx - Mr, my - Mr, 2 * Mr, 2 * Mr);
+  };
+  if (!moonFront) drawMoon();
+
+  // Earth
+  g = ctx.createRadialGradient(cx, cy, Re * 0.9, cx, cy, Re * 1.16);
+  g.addColorStop(0, 'rgba(110,175,255,0)'); g.addColorStop(0.42, 'rgba(110,175,255,.38)'); g.addColorStop(1, 'rgba(110,175,255,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, Re * 1.16, 0, TAU); ctx.fill();
+  renderSphere(earthSp, EARTH_TEX, th, TILT, EARTH_SHADE);
+  ctx.drawImage(earthSp.c, cx - Re, cy - Re, 2 * Re, 2 * Re);
+  ctx.strokeStyle = 'rgba(255,255,255,.6)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(...axisPt(1)); ctx.lineTo(...axisPt(1.35)); ctx.stroke();
+  ctx.fillStyle = 'rgba(245,245,247,.8)'; ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif';
+  ctx.textAlign = 'center'; const [nx, ny] = axisPt(1.55); ctx.fillText('N', nx, ny + 4);
+
+  // Atlanta marker
+  const atl = atlantaWorld();
+  if (depth(atl) > 0.04) {
+    const [px, py] = toScreen(atl, Re);
+    ctx.beginPath(); ctx.arc(px, py, 3.5, 0, TAU); ctx.fillStyle = '#ff5a4a'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillText('Atlanta', px + 8, py + 5); ctx.fillStyle = '#fff'; ctx.fillText('Atlanta', px + 7, py + 4);
+  }
+
+  if (moonFront) drawMoon();
+
+  drawPhase(a);
+  updateReadout(atl);
+}
+
+function drawPhase(a) {
+  const s = phaseC.width / DPR, r = s * 0.42, x = s / 2, y = s / 2, c = Math.cos(a), waxing = Math.sin(a) >= 0;
+  pg.setTransform(DPR, 0, 0, DPR, 0, 0); pg.clearRect(0, 0, s, s);
+  pg.fillStyle = '#2b2d35'; pg.beginPath(); pg.arc(x, y, r, 0, TAU); pg.fill();
+  pg.fillStyle = '#e9e7df'; pg.beginPath();
+  if (waxing) {
+    pg.arc(x, y, r, -Math.PI / 2, Math.PI / 2);
+    if (c > 0) pg.ellipse(x, y, r * c, r, 0, Math.PI / 2, -Math.PI / 2, true); else pg.ellipse(x, y, -r * c, r, 0, Math.PI / 2, 3 * Math.PI / 2, false);
+  } else {
+    pg.arc(x, y, r, Math.PI / 2, 3 * Math.PI / 2);
+    if (c > 0) pg.ellipse(x, y, r * c, r, 0, 3 * Math.PI / 2, Math.PI / 2, true); else pg.ellipse(x, y, -r * c, r, 0, -Math.PI / 2, Math.PI / 2, false);
+  }
+  pg.closePath(); pg.fill();
+  pg.strokeStyle = 'rgba(255,255,255,.18)'; pg.lineWidth = 1; pg.beginPath(); pg.arc(x, y, r, 0, TAU); pg.stroke();
+}
+
+function updateReadout(atl) {
+  const h = (((t % 1) + 1) % 1) * 24, hh = String(Math.floor(h)).padStart(2, '0'), mm = String(Math.floor((h % 1) * 60)).padStart(2, '0');
+  const isDay = atl[0] > 0;
+  const f = phaseFrac(), lit = Math.round((1 - Math.cos(TAU * f)) / 2 * 100);
+  els.read1.innerHTML = `Day <b>${Math.floor(t)}</b> · Atlanta <b>${hh}:${mm}</b> · ${isDay ? 'daylight' : 'night'}`;
+  els.read2.innerHTML = `<b>${phaseName(f)}</b> · ${lit}% lit · ${(f * SYNODIC).toFixed(1)} days after new moon`;
+}
+
+// ---------- interaction ----------
+const moonAngleAt = (p) => Math.atan2((cy - p.y) / Math.sin(elev), p.x - cx);
+function hit(p) {
+  const [mx, my] = toScreen([Rm * Math.cos(alpha()), Rm * Math.sin(alpha()), 0], 1);
+  if (Math.hypot(p.x - mx, p.y - my) <= Math.max(Mr + 8, 24)) return 'moon';
+  if (Math.hypot(p.x - cx, p.y - cy) <= Re + 6) return 'earth';
+  return 'view';
+}
+sky.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0 && e.pointerType === 'mouse') return;
+  const p = { x: e.clientX, y: e.clientY };
+  drag = { mode: hit(p), x: p.x, y: p.y, a: moonAngleAt(p), id: e.pointerId };
+  try { sky.setPointerCapture(e.pointerId); } catch {}
+  sky.classList.add('dragging');
+});
+sky.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  const p = { x: e.clientX, y: e.clientY };
+  if (drag.mode === 'moon') {
+    const a = moonAngleAt(p); let da = a - drag.a; da -= TAU * Math.round(da / TAU);
+    t += da / TAU * SYNODIC; drag.a = a;
+  } else if (drag.mode === 'earth') {
+    t += (p.x - drag.x) / Re / TAU;
+  } else {
+    elev = Math.max(0.12, Math.min(1.5, elev + (p.y - drag.y) * 0.006)); layout();
+  }
+  drag.x = p.x; drag.y = p.y; dirty = true;
+});
+const endDrag = (e) => { if (drag && e.pointerId === drag.id) { drag = null; sky.classList.remove('dragging'); } };
+sky.addEventListener('pointerup', endDrag); sky.addEventListener('pointercancel', endDrag);
+sky.addEventListener('wheel', (e) => { e.preventDefault(); elev = Math.max(0.12, Math.min(1.5, elev + e.deltaY * 0.003)); layout(); }, { passive: false });
+
+function setPlaying(v) {
+  playing = v; els.icoPlay.hidden = v; els.icoPause.hidden = !v; els.play.setAttribute('aria-label', v ? 'Pause' : 'Play');
+}
+els.play.addEventListener('click', () => setPlaying(!playing));
+function setSpeed(v) {
+  speed = 0.02 * Math.pow(10, (v / 100) * 2.7);
+  els.speedlbl.textContent = speed < 1 ? `1 s = ${(speed * 24).toFixed(1)} h` : `1 s = ${speed.toFixed(1)} days`;
+}
+els.speed.addEventListener('input', () => setSpeed(Number(els.speed.value)));
+els.reset.addEventListener('click', () => { t = 2.6; elev = 0.6; els.speed.value = 41; setSpeed(41); layout(); });
+addEventListener('keydown', (e) => {
+  if (e.target !== document.body && e.target !== sky) return;
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+  else if (e.code === 'ArrowRight') { t += e.shiftKey ? 1 : 1 / 24; dirty = true; }
+  else if (e.code === 'ArrowLeft') { t -= e.shiftKey ? 1 : 1 / 24; dirty = true; }
+});
+
+// ---------- loop ----------
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (playing && !drag) { t += speed * dt; dirty = true; }
+  if (dirty) { draw(); dirty = false; }
+  requestAnimationFrame(frame);
+}
+addEventListener('resize', resize);
+window.__earthMoon = { state: () => ({ t, elev, cx, cy, Re, Rm, Mr, playing }), set: (v) => { if ('t' in v) t = v.t; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
+setPlaying(playing); setSpeed(Number(els.speed.value));
+resize();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
