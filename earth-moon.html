@@ -89,7 +89,7 @@ const MOON_RATIO = 0.2725;          // Moon radius / Earth radius (to scale)
 const SUN = [1, 0, 0];              // sunlight arrives from +x (screen right)
 const EPOCH = Date.UTC(2000, 0, 1, 12); // J2000.0; t counts days from here, so the sky matches real dates
 const nowDays = () => (Date.now() - EPOCH) / 86400000;
-// Where the viewer is. Atlanta until the lookup below answers.
+// Where the viewer is. Atlanta until the location prompt below answers.
 let loc = { name: 'Atlanta', lat: 33.749 * D2R, lon: -84.388 * D2R, tz: 'America/New_York' };
 
 const sky = document.getElementById('sky'), ctx = sky.getContext('2d');
@@ -517,19 +517,13 @@ function frame(now) {
 addEventListener('resize', resize);
 window.__earthMoon = { state: () => ({ t, offset, speed, elev, cx, cy, Re, Rm, Mr, playing, loc, sunLon: sunLon(), moonLon: moonLon(), gmst: gmst(), axis: apply(bodyToWorld(), [0, 0, 1]), atl: locWorld(), date: fmt({ month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }), season: season(), moon: toScreen(moonPos(alpha(), orbitToWorld(), nodeLon()), Rm) }), tick: () => draw(), set: (v) => { if ('t' in v) setT(v.t); if ('loc' in v) loc = v.loc; if ('elev' in v) { elev = v.elev; layout(); } dirty = true; } };
 setPlaying(playing); setSpeed('real');
-// Put the red dot where the viewer is (by IP) and read the clock in their time zone. Atlanta if every lookup fails.
-const GEO = [
-  ['https://get.geojs.io/v1/ip/geo.json', (j) => ({ name: j.city, lat: +j.latitude, lon: +j.longitude, tz: j.timezone })],
-  ['https://ipwho.is/', (j) => j.success && { name: j.city, lat: +j.latitude, lon: +j.longitude, tz: j.timezone && j.timezone.id }],
-];
-(async () => {
-  for (const [url, pick] of GEO) {
-    try {
-      const g = pick(await (await fetch(url, { signal: AbortSignal.timeout(6000) })).json());
-      if (g && Number.isFinite(g.lat) && Number.isFinite(g.lon)) { loc = { name: g.name || 'You', lat: g.lat * D2R, lon: g.lon * D2R, tz: g.tz }; dirty = true; return; }
-    } catch {}
-  }
-})();
+// Put the red dot where the viewer is, using the browser's own location prompt (nothing leaves the page),
+// and read the clock in the browser's time zone. Atlanta if the viewer declines.
+if (navigator.geolocation) navigator.geolocation.getCurrentPosition((pos) => {
+  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return undefined; } })();
+  loc = { name: 'You', lat: pos.coords.latitude * D2R, lon: pos.coords.longitude * D2R, tz };
+  dirty = true;
+}, () => {}, { maximumAge: 600000, timeout: 20000 });
 resize();
 requestAnimationFrame(frame);
 })();
